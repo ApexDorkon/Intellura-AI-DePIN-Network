@@ -1,7 +1,7 @@
 import { useAuth } from '../state/auth'
 import logoUrl from '../assets/IntelluraLogo.png'
 import xLogo from '../assets/xLogo.svg'
-
+import { API_BASE } from '../lib/config'
 export default function Header() {
   const { me, logout } = useAuth()
 
@@ -31,7 +31,7 @@ export default function Header() {
             </button>
           ) : (
             <a
-              href={`${import.meta.env.VITE_API_BASE}/auth/x/login`}
+              href={`${API_BASE}/auth/x/login`}
               className="py-2 px-5 rounded-full bg-white text-black flex items-center gap-2 border border-white/20 hover:bg-gray-200 transition"
             >
               <span className="text-base font-semibold">Connect</span>

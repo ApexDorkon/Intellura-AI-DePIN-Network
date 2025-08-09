@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../state/auth';
 import { getBalance, getMyReferral, setWallet, applyReferral } from '../lib/api';
-
+import { API_BASE } from '../lib/config'
 export default function JoinPanel() {
   const { me } = useAuth();
 
@@ -48,7 +48,7 @@ export default function JoinPanel() {
                   </p>
                 </div>
                 <a
-                  href={`${import.meta.env.VITE_API_BASE}/auth/x/login`}
+                  href={`${API_BASE}/auth/x/login`}
                   className="py-3 px-6 rounded-full bg-white text-black flex items-center gap-2 border border-white/20 hover:bg-gray-200 transition"
                 >
                   <span className="font-semibold">Connect X</span>
