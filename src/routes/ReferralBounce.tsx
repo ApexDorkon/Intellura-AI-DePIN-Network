@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { API } from '../lib/api'
-import { API_BASE } from '../lib/config'
+
 export default function ReferralBounce() {
   const { code } = useParams<{ code: string }>()
   const navigate = useNavigate()
