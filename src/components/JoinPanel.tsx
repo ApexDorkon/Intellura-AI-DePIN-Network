@@ -1,57 +1,92 @@
-import { useEffect, useState } from 'react';
-import { useAuth } from '../state/auth';
-import { getBalance, getMyReferral, setWallet, applyReferral } from '../lib/api';
+import { useEffect, useMemo, useState } from 'react'
+import { useAuth } from '../state/auth'
+import {
+  getBalance,
+  getMyReferral,
+  getMyReferrer,
+  setWallet as setWalletAPI,
+  applyReferral as applyReferralAPI,
+} from '../lib/api'
 import { API_BASE } from '../lib/config'
+
 export default function JoinPanel() {
-  const { me } = useAuth();
+  const { me } = useAuth()
 
-  const [balance, setBalance] = useState<number>(0);
-  const [myRef, setMyRef] = useState<{ code: string; shareUrl: string } | null>(null);
-  const [wallet, setWalletInput] = useState('');
-  const [refCode, setRefCode] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
+  // Normalize handle/avatar regardless of backend shape
+  const username = useMemo(() => (me as any)?.handle ?? (me as any)?.x_username ?? 'User', [me])
+  const avatar   = useMemo(() => (me as any)?.avatarUrl ?? (me as any)?.profile_image_url ?? '', [me])
 
-  // After auth: load balance + ensure/refetch referral code
+  const [balance, setBalance] = useState<number>(0)
+  const [myRef, setMyRef] = useState<{ code: string; shareUrl: string } | null>(null)
+
+  const [wallet, setWallet] = useState('')
+  const [refCode, setRefCode] = useState('')
+  const [hasReferrer, setHasReferrer] = useState<boolean | null>(null)
+  const [referrer, setReferrer] = useState<{
+    x_username: string
+    profile_image_url?: string
+    code: string
+  } | null>(null)
+
+  const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const [successMsg, setSuccessMsg] = useState<string | null>(null)
+
+  // After auth: load balance, referral code, and referrer state
   useEffect(() => {
-    if (!me) return;
-    setLoading(true);
-    (async () => {
+    if (!me) return
+    let mounted = true
+    setLoading(true)
+    ;(async () => {
       try {
-        const [b, r] = await Promise.all([
+        const [b, r, rr] = await Promise.all([
           getBalance().catch(() => ({ balance: 0 })),
           getMyReferral().catch(() => null as any),
-        ]);
-        setBalance(b?.balance ?? 0);
-        if (r?.code) setMyRef(r);
+          getMyReferrer().catch(() => ({ has_referrer: false } as any)),
+        ])
+        if (!mounted) return
+        setBalance(b?.balance ?? 0)
+        if (r?.code) setMyRef(r)
+        if (typeof rr?.has_referrer === 'boolean') {
+          setHasReferrer(rr.has_referrer)
+          setReferrer(rr.has_referrer ? rr.referrer ?? null : null)
+        }
       } finally {
-        setLoading(false);
+        if (mounted) setLoading(false)
       }
-    })();
-  }, [me]);
+    })()
+    return () => {
+      mounted = false
+    }
+  }, [me])
 
-  /* ============= Not authed ============= */
+  /* =========================
+     Not authenticated
+  ========================== */
   if (!me) {
     return (
       <section className="bg-[#0B0D12]">
         <div className="mx-auto max-w-6xl px-4 py-16">
-          <div className="relative rounded-3xl border border-white/10 overflow-hidden">
+          <div className="relative overflow-hidden rounded-3xl border border-white/10">
+            {/* Heavy veil: ensure nothing behind is readable */}
             <div className="absolute inset-0 backdrop-blur-3xl backdrop-saturate-50" />
             <div className="absolute inset-0 bg-black/60" />
             <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/10 via-transparent to-violet-500/15" />
+
             <div className="relative grid place-items-center px-6 py-16 sm:py-20">
               <div className="w-full max-w-3xl flex flex-col sm:flex-row items-center justify-between gap-6">
                 <div className="text-center sm:text-left">
                   <h3 className="text-3xl font-extrabold text-white">Join Intellura</h3>
-                  <p className="text-white/80 mt-3">
+                  <p className="mt-3 text-white/80">
                     Connect your X account to unlock referrals and start earning points.
                   </p>
                 </div>
                 <a
                   href={`${API_BASE}/auth/x/login`}
-                  className="py-3 px-6 rounded-full bg-white text-black flex items-center gap-2 border border-white/20 hover:bg-gray-200 transition"
+                  className="inline-flex items-center gap-2 rounded-full bg-white px-6 py-3 font-semibold text-black border border-white/20 hover:bg-gray-200 transition"
                 >
-                  <span className="font-semibold">Connect X</span>
+                  <span>Connect X</span>
                   <span className="text-lg">𝕏</span>
                 </a>
               </div>
@@ -59,66 +94,118 @@ export default function JoinPanel() {
           </div>
         </div>
       </section>
-    );
+    )
   }
 
-  /* ============= Authed (single panel: setup + status) ============= */
+  /* =========================
+     Authenticated
+  ========================== */
   return (
     <section className="bg-[#0B0D12]">
       <div className="mx-auto max-w-6xl px-4 py-16">
         <div className="rounded-3xl border border-white/10 bg-white/5 p-6 sm:p-8 backdrop-blur">
           <div className="grid gap-8 md:grid-cols-2">
-            {/* Left — Finish setup */}
+            {/* Left — Profile + Setup */}
             <div>
-              <h3 className="text-xl font-semibold text-white">Finish setup</h3>
-              <p className="text-white/60 text-sm mt-1">Enter a wallet and optional referral code (get +5 points).</p>
-
-              <div className="mt-6 grid gap-4">
+              {/* Profile header */}
+              <div className="flex items-center gap-4">
+                <div className="relative">
+                  <div className="h-12 w-12 overflow-hidden rounded-full ring-2 ring-white/10">
+                    {avatar ? (
+                      <img src={avatar} alt={username} className="h-full w-full object-cover" />
+                    ) : (
+                      <div className="h-full w-full bg-white/10" />
+                    )}
+                  </div>
+                </div>
                 <div>
-                  <label className="block text-sm text-white/70 mb-1">Wallet address</label>
+                  <div className="text-white font-semibold text-lg">@{username}</div>
+                  {hasReferrer && referrer ? (
+                    <div className="mt-1 inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs text-white/80">
+                      <span className="opacity-75">Invited by</span>
+                      {referrer.profile_image_url ? (
+                        <img
+                          src={referrer.profile_image_url}
+                          alt={referrer.x_username}
+                          className="h-4 w-4 rounded-full"
+                        />
+                      ) : null}
+                      <span className="font-medium">@{referrer.x_username}</span>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+
+              {/* Setup form */}
+              <h3 className="mt-6 text-xl font-semibold text-white">Finish setup</h3>
+              <p className="mt-1 text-sm text-white/60">Add a wallet and (optionally) a referral code.</p>
+
+              <div className="mt-5 grid gap-4">
+                <div>
+                  <label className="mb-1 block text-sm text-white/70">Wallet address</label>
                   <input
                     value={wallet}
-                    onChange={(e) => setWalletInput(e.target.value)}
+                    onChange={(e) => setWallet(e.target.value)}
                     placeholder="0x…"
                     className="w-full rounded-lg bg-black/40 text-white placeholder-white/30 border border-white/10 px-3 py-2 outline-none focus:ring-2 focus:ring-cyan-500"
                   />
                 </div>
-                <div>
-                  <label className="block text-sm text-white/70 mb-1">Referral code (optional)</label>
-                  <input
-                    value={refCode}
-                    onChange={(e) => setRefCode(e.target.value)}
-                    placeholder="friend123"
-                    className="w-full rounded-lg bg-black/40 text-white placeholder-white/30 border border-white/10 px-3 py-2 outline-none focus:ring-2 focus:ring-violet-500"
-                  />
-                </div>
+
+                {/* Only show referral input if user does NOT have a referrer yet */}
+                {hasReferrer === false && (
+                  <div>
+                    <label className="mb-1 block text-sm text-white/70">
+                      Referral code <span className="text-white/40">(optional, +5 points)</span>
+                    </label>
+                    <input
+                      value={refCode}
+                      onChange={(e) => setRefCode(e.target.value)}
+                      placeholder="friend123"
+                      className="w-full rounded-lg bg-black/40 text-white placeholder-white/30 border border-white/10 px-3 py-2 outline-none focus:ring-2 focus:ring-violet-500"
+                    />
+                  </div>
+                )}
               </div>
 
-              <div className="mt-6">
+              {/* Actions */}
+              <div className="mt-6 flex items-center gap-3">
                 <button
-                  disabled={!wallet || submitting}
+                  disabled={!wallet || saving}
                   onClick={async () => {
+                    setErrorMsg(null)
+                    setSuccessMsg(null)
                     try {
-                      setSubmitting(true);
-                      await setWallet(wallet);                // <-- real API
-                      if (refCode.trim()) await applyReferral(refCode.trim()); // optional, ignore failures
-                      // refresh right column
+                      setSaving(true)
+                      await setWalletAPI(wallet)
+                      if (hasReferrer === false && refCode.trim()) {
+                        await applyReferralAPI(refCode.trim())
+                        setHasReferrer(true) // optimistic; backend will enforce uniqueness
+                      }
+                      // Refresh right column data
                       const [b, r] = await Promise.all([
                         getBalance().catch(() => ({ balance: 0 })),
                         getMyReferral().catch(() => null as any),
-                      ]);
-                      setBalance(b?.balance ?? 0);
-                      if (r?.code) setMyRef(r);
-                    } catch (e) {
-                      console.error(e);
+                      ])
+                      setBalance(b?.balance ?? 0)
+                      if (r?.code) setMyRef(r)
+                      setSuccessMsg('Saved!')
+                    } catch (e: any) {
+                      setErrorMsg(typeof e?.message === 'string' ? e.message : 'Failed to save')
                     } finally {
-                      setSubmitting(false);
+                      setSaving(false)
+                      setTimeout(() => {
+                        setSuccessMsg(null)
+                        setErrorMsg(null)
+                      }, 2500)
                     }
                   }}
                   className="rounded-full bg-white text-black px-5 py-2 font-semibold hover:bg-gray-200 disabled:opacity-50"
                 >
-                  {submitting ? 'Submitting…' : 'Join'}
+                  {saving ? 'Saving…' : 'Save'}
                 </button>
+
+                {successMsg && <span className="text-sm text-emerald-400">{successMsg}</span>}
+                {errorMsg && <span className="text-sm text-rose-400">{errorMsg}</span>}
               </div>
             </div>
 
@@ -126,20 +213,20 @@ export default function JoinPanel() {
             <div>
               <div className="flex items-center justify-between">
                 <div>
-                  <h4 className="text-xl font-bold text-white">{me?.handle ? `@${me.handle}` : 'Welcome'}</h4>
-                  <p className="text-white/70">Your Intellura status</p>
+                  <h4 className="text-xl font-bold text-white">Your Intellura status</h4>
+                  <p className="text-white/70">Keep sharing and earning.</p>
                 </div>
 
                 <div className="rounded-xl bg-black/40 border border-white/10 px-4 py-3">
-                  <div className="text-white/60 text-xs">Points</div>
+                  <div className="text-xs text-white/60">Points</div>
                   <div className="text-2xl font-extrabold text-white">{loading ? '—' : balance}</div>
                 </div>
               </div>
 
               <div className="mt-6">
-                <label className="block text-sm text-white/70 mb-1">Your referral link</label>
+                <label className="mb-1 block text-sm text-white/70">Your referral link</label>
                 {loading ? (
-                  <div className="h-10 w-full rounded-lg bg-white/10 animate-pulse" />
+                  <div className="h-10 w-full animate-pulse rounded-lg bg-white/10" />
                 ) : (
                   <div className="flex items-stretch gap-2">
                     <input
@@ -150,22 +237,27 @@ export default function JoinPanel() {
                     <button
                       disabled={!myRef?.shareUrl}
                       onClick={() => myRef?.shareUrl && navigator.clipboard.writeText(myRef.shareUrl)}
-                      className="rounded-lg bg-white text-black px-4 font-semibold hover:bg-gray-200 disabled:opacity-50"
+                      className="rounded-lg bg-white px-4 font-semibold text-black hover:bg-gray-200 disabled:opacity-50"
                     >
                       Copy
                     </button>
                   </div>
                 )}
                 {!myRef?.code && !loading && (
-                  <p className="text-xs text-white/50 mt-2">No code yet? It will appear here once created.</p>
+                  <p className="mt-2 text-xs text-white/50">No code yet? It will appear here once created.</p>
                 )}
               </div>
 
-              <p className="text-white/60 text-sm mt-4">Share your link — earn points as friends join.</p>
+              {/* Subtle hint card */}
+              <div className="mt-6 rounded-xl border border-white/10 bg-gradient-to-br from-cyan-500/5 via-transparent to-violet-500/10 p-4">
+                <div className="text-sm text-white/80">
+                  Tip: higher engagement unlocks bonus multipliers during AI signal drops.
+                </div>
+              </div>
             </div>
           </div>
         </div>
       </div>
     </section>
-  );
+  )
 }
