@@ -14,9 +14,11 @@ import { API_BASE } from '../lib/config'
 
 declare global { interface Window { ethereum?: any } }
 
+// ---- helpers ----
 const shortAddr = (a: string) => (a && a.length > 10 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a || '')
 const isLikelyRef = (s: string) => /^[A-Z0-9]{4,12}$/.test((s || '').trim())
-const isHexWallet = (w?: string) => !!(w && w.startsWith('0x') && w.length === 42)
+// stricter hex check to avoid false positives
+const isHexWallet = (w?: string) => !!(w && /^0x[a-f0-9]{40}$/.test(w))
 
 function friendlyError(err: unknown): string {
   const raw = (err as any)?.message ?? err
@@ -26,6 +28,15 @@ function friendlyError(err: unknown): string {
     return raw
   }
   return 'Something went wrong.'
+}
+
+// best-effort auth refresh (works even if not implemented)
+async function refreshAuthIfAvailable() {
+  try {
+    const st = (useAuth as any).getState?.()
+    const fn = st?.refresh
+    if (typeof fn === 'function') await fn()
+  } catch { /* no-op */ }
 }
 
 export default function JoinPanel() {
@@ -96,8 +107,8 @@ export default function JoinPanel() {
 
       setBanner({ type: 'success', text: 'Wallet connected.' })
 
-      // If your auth store exposes a refresh, uncomment:
-      // ;(useAuth as any).getState?.().refresh?.()
+      // pull fresh /me so wallet badge appears immediately
+      await refreshAuthIfAvailable()
     } catch (e: any) {
       const msg = friendlyError(e)
       if (!/user rejected/i.test(msg)) {
