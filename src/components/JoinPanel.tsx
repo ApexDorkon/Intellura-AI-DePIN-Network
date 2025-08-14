@@ -1,5 +1,5 @@
 // src/components/JoinPanel.tsx
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { BrowserProvider } from 'ethers'
 import { useAuth } from '../state/auth'
 import {
@@ -14,8 +14,8 @@ import { API_BASE } from '../lib/config'
 
 declare global { interface Window { ethereum?: any } }
 
-const shortAddr = (a: string) => (a?.length > 10 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a ?? '')
-const isLikelyRef = (s: string) => /^[A-Z0-9]{4,12}$/.test(s.trim())
+const shortAddr = (a: string) => (a && a.length > 10 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a || '')
+const isLikelyRef = (s: string) => /^[A-Z0-9]{4,12}$/.test((s || '').trim())
 
 function friendlyError(err: unknown): string {
   const raw = (err as any)?.message ?? err
@@ -29,32 +29,43 @@ function friendlyError(err: unknown): string {
 
 export default function JoinPanel() {
   const { me } = useAuth()
-  const username = useMemo(() => (me as any)?.handle ?? (me as any)?.x_username ?? 'User', [me])
-  const avatar   = useMemo(() => (me as any)?.avatarUrl ?? (me as any)?.profile_image_url ?? '', [me])
-  
-  const initialWallet = useMemo(
-    () => ((me as any)?.wallet_address ?? '').toString().toLowerCase(),
-    [me],
-  )
+
+  // Normalize profile fields (no useMemo — keep it simple)
+  const username = (me as any)?.handle ?? (me as any)?.x_username ?? 'User'
+  const avatar = (me as any)?.avatarUrl ?? (me as any)?.profile_image_url ?? ''
+  const walletFromMe = String((me as any)?.wallet_address ?? '').toLowerCase()
+
+  // State
+  const [walletAddress, setWalletAddress] = useState<string>(walletFromMe)
+  const [connecting, setConnecting] = useState(false)
 
   const [balance, setBalance] = useState<number>(0)
   const [myRef, setMyRef] = useState<{ code: string; shareUrl: string } | null>(null)
-  const [walletAddress, setWalletAddress] = useState<string>('')
-  const [connecting, setConnecting] = useState(false)
+
   const [refCode, setRefCode] = useState('')
   const [hasReferrer, setHasReferrer] = useState<boolean | null>(null)
-  const [referrer, setReferrer] = useState<{ x_username: string; profile_image_url?: string; code?: string } | null>(null)
+  const [referrer, setReferrer] = useState<{
+    x_username: string
+    profile_image_url?: string
+    code?: string
+  } | null>(null)
+
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [banner, setBanner] = useState<{ type: 'error' | 'success'; text: string } | null>(null)
   const [fieldErr, setFieldErr] = useState<{ wallet?: string; ref?: string }>({})
   const [copied, setCopied] = useState(false)
-const hasWallet = !!(walletAddress || initialWallet) && (walletAddress || initialWallet).startsWith('0x')
-// AFTER: always keep local state in sync with /me
-useEffect(() => {
-  setWalletAddress((prev) => (initialWallet && initialWallet !== prev ? initialWallet : prev))
-}, [initialWallet])
 
+  // Always keep local wallet in sync with /me
+  useEffect(() => {
+    setWalletAddress(walletFromMe)
+  }, [walletFromMe])
+
+  // Derived
+  const hasWallet =
+    !!(walletAddress && walletAddress.startsWith('0x') && walletAddress.length === 42)
+
+  // Load points, code, referrer after auth
   useEffect(() => {
     if (!me) return
     let mounted = true
@@ -73,24 +84,32 @@ useEffect(() => {
           setHasReferrer(rr.has_referrer)
           setReferrer(rr.has_referrer ? rr.referrer ?? null : null)
         }
-      } finally { if (mounted) setLoading(false) }
+      } finally {
+        if (mounted) setLoading(false)
+      }
     })()
     return () => { mounted = false }
   }, [me])
 
+  // Wallet connect (nonce + signature + link)
   const handleConnectWallet = async () => {
-    setFieldErr({}); setBanner(null)
+    setFieldErr({})
+    setBanner(null)
     try {
       const eth = window.ethereum
       if (!eth) throw new Error('MetaMask not detected. Please install or enable it.')
       setConnecting(true)
+
       await eth.request({ method: 'eth_requestAccounts' })
       const provider = new BrowserProvider(eth)
       const signer = await provider.getSigner()
       const addr = (await signer.getAddress()).toLowerCase()
+
       const { nonce } = await getWalletNonce(addr)
       const signature = await signer.signMessage(`Sign this nonce to authenticate: ${nonce}`)
       await connectWallet(addr, signature)
+
+      // Update local immediately (backend also saves)
       setWalletAddress(addr)
       setBanner({ type: 'success', text: 'Wallet connected.' })
     } catch (e: any) {
@@ -105,6 +124,7 @@ useEffect(() => {
     }
   }
 
+  // ---------- Not authenticated ----------
   if (!me) {
     return (
       <section className="bg-[#0B0D12]">
@@ -117,7 +137,9 @@ useEffect(() => {
               <div className="w-full max-w-3xl flex flex-col sm:flex-row items-center justify-between gap-6">
                 <div className="text-center sm:text-left">
                   <h3 className="text-3xl font-extrabold text-white">Join Intellura</h3>
-                  <p className="mt-3 text-white/80">Connect your X account to unlock referrals and start earning points.</p>
+                  <p className="mt-3 text-white/80">
+                    Connect your X account to unlock referrals and start earning points.
+                  </p>
                 </div>
                 <a
                   href={`${API_BASE}/auth/x/login`}
@@ -133,24 +155,27 @@ useEffect(() => {
     )
   }
 
+  // ---------- Authenticated ----------
   return (
     <section className="bg-[#0B0D12]">
       <div className="mx-auto max-w-6xl px-4 py-12">
         <div className="rounded-3xl border border-white/10 bg-white/5 p-6 sm:p-8 backdrop-blur">
           {banner && (
-            <div className={`mb-4 rounded-xl border px-4 py-3 text-sm ${
-              banner.type === 'success'
-                ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-                : 'border-rose-500/30 bg-rose-500/10 text-rose-300'
-            }`}>
+            <div
+              className={`mb-4 rounded-xl border px-4 py-3 text-sm ${
+                banner.type === 'success'
+                  ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                  : 'border-rose-500/30 bg-rose-500/10 text-rose-300'
+              }`}
+            >
               {banner.text}
             </div>
           )}
 
           <div className="grid gap-8 md:grid-cols-2">
-            {/* Left */}
+            {/* LEFT — Profile + wallet */}
             <div className="flex flex-col">
-              <div className="flex items-center gap-4 mb-6">
+              <div className="mb-6 flex items-center gap-4">
                 <div className="h-12 w-12 overflow-hidden rounded-full ring-2 ring-white/10">
                   {avatar
                     ? <img src={avatar} alt={username} className="h-full w-full object-cover" />
@@ -175,37 +200,36 @@ useEffect(() => {
                 Link your on-chain wallet to start tracking rewards. Add an invite code to boost your starting signal.
               </p>
 
-             <div className="mt-4 flex flex-col gap-2 max-w-xs">
-  {hasWallet ? (
-    <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white/80">
-      <span className="h-2 w-2 rounded-full bg-emerald-400" />
-      {shortAddr(walletAddress || initialWallet)}
-    </span>
-  ) : (
-    <button
-      onClick={handleConnectWallet}
-      disabled={connecting}
-      className="rounded-full bg-white text-black px-4 py-2 text-sm font-semibold hover:bg-gray-200 disabled:opacity-60"
-    >
-      {connecting ? 'Connecting…' : '🦊 Connect wallet'}
-    </button>
-  )}
+              <div className="mt-4 flex flex-col gap-2 max-w-xs">
+                {hasWallet ? (
+                  <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white/80">
+                    <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                    {shortAddr(walletAddress || walletFromMe)}
+                  </span>
+                ) : (
+                  <button
+                    onClick={handleConnectWallet}
+                    disabled={connecting}
+                    className="rounded-full bg-white text-black px-4 py-2 text-sm font-semibold hover:bg-gray-200 disabled:opacity-60"
+                  >
+                    {connecting ? 'Connecting…' : '🦊 Connect wallet'}
+                  </button>
+                )}
 
-  {/* Optional: keep "Change" only if you want to allow re-linking */}
-  {hasWallet && (
-    <button
-      onClick={handleConnectWallet}
-      className="rounded-full border border-white/20 px-3 py-2 text-sm text-white/80 hover:bg-white/10"
-    >
-      Change
-    </button>
-  )}
+                {hasWallet && (
+                  <button
+                    onClick={handleConnectWallet}
+                    className="rounded-full border border-white/20 px-3 py-2 text-sm text-white/80 hover:bg-white/10"
+                  >
+                    Change
+                  </button>
+                )}
 
-  {fieldErr.wallet && <div className="text-xs text-rose-400">{fieldErr.wallet}</div>}
-</div>
+                {fieldErr.wallet && <div className="text-xs text-rose-400">{fieldErr.wallet}</div>}
+              </div>
             </div>
 
-            {/* Right */}
+            {/* RIGHT — Status + referrals */}
             <div>
               <div className="flex items-center justify-between">
                 <div>
@@ -218,68 +242,72 @@ useEffect(() => {
                 </div>
               </div>
 
+              {/* Show referral input + CTA ONLY if user has no referrer yet */}
               {hasReferrer === false && (
-                <div className="mt-4">
-                  <label className="mb-1 block text-sm text-white/70">
-                    Referral code <span className="text-white/40">(optional, +100 points)</span>
-                  </label>
-                  <input
-                    value={refCode}
-                    onChange={(e) => {
-                      setRefCode(e.target.value.toUpperCase())
-                      if (fieldErr.ref) setFieldErr((p) => ({ ...p, ref: undefined }))
-                    }}
-                    placeholder="FUDCH8"
-                    className={`w-full rounded-lg bg-black/40 text-white placeholder-white/30 border px-3 py-2 outline-none focus:ring-2 ${
-                      fieldErr.ref ? 'border-rose-500 focus:ring-rose-500' : 'border-white/10 focus:ring-violet-500'
-                    }`}
-                  />
-                  {fieldErr.ref && <div className="mt-1 text-xs text-rose-400">{fieldErr.ref}</div>}
-                </div>
+                <>
+                  <div className="mt-4">
+                    <label className="mb-1 block text-sm text-white/70">
+                      Referral code <span className="text-white/40">(optional, +100 points)</span>
+                    </label>
+                    <input
+                      value={refCode}
+                      onChange={(e) => {
+                        setRefCode(e.target.value.toUpperCase())
+                        if (fieldErr.ref) setFieldErr((p) => ({ ...p, ref: undefined }))
+                      }}
+                      placeholder="FUDCH8"
+                      className={`w-full rounded-lg bg-black/40 text-white placeholder-white/30 border px-3 py-2 outline-none focus:ring-2 ${
+                        fieldErr.ref ? 'border-rose-500 focus:ring-rose-500' : 'border-white/10 focus:ring-violet-500'
+                      }`}
+                    />
+                    {fieldErr.ref && <div className="mt-1 text-xs text-rose-400">{fieldErr.ref}</div>}
+                  </div>
+
+                  <div className="mt-4">
+                    <button
+                      disabled={!refCode.trim()}
+                      onClick={async () => {
+                        setFieldErr({})
+                        setBanner(null)
+                        const code = refCode.trim().toUpperCase()
+                        if (code && !isLikelyRef(code)) {
+                          setFieldErr({ ref: 'Invalid code format.' })
+                          return
+                        }
+                        try {
+                          setSaving(true)
+                          await applyReferralAPI(code)
+                          // recheck referrer after apply
+                          const rr = await getMyReferrer().catch(() => ({ has_referrer: true } as any))
+                          if (rr?.has_referrer) {
+                            setHasReferrer(true)
+                            setReferrer(rr.referrer ?? null)
+                          }
+                          setBanner({ type: 'success', text: 'Referral applied.' })
+                          setRefCode('')
+                          // refresh balance & my code
+                          const [b, r] = await Promise.all([
+                            getBalance().catch(() => ({ balance: 0 })),
+                            getMyReferral().catch(() => null as any),
+                          ])
+                          setBalance(b?.balance ?? 0)
+                          if (r?.code) setMyRef(r)
+                        } catch (e: any) {
+                          setBanner({ type: 'error', text: friendlyError(e) })
+                        } finally {
+                          setSaving(false)
+                          setTimeout(() => setBanner(null), 3000)
+                        }
+                      }}
+                      className="rounded-full bg-white text-black px-4 py-2 text-sm font-semibold hover:bg-gray-200 disabled:opacity-50"
+                    >
+                      {saving ? 'Boosting…' : 'Boost signal'}
+                    </button>
+                  </div>
+                </>
               )}
 
-              <div className="mt-4">
-                <button
-                  disabled={(hasReferrer !== false || !refCode.trim()) && !walletAddress}
-                  onClick={async () => {
-                    setFieldErr({}); setBanner(null)
-                    if (hasReferrer === false) {
-                      const code = refCode.trim().toUpperCase()
-                      if (code && !isLikelyRef(code)) {
-                        setFieldErr({ ref: 'Invalid code format.' }); return
-                      }
-                    }
-                    try {
-                      setSaving(true)
-                      if (hasReferrer === false && refCode.trim()) {
-                        await applyReferralAPI(refCode.trim().toUpperCase())
-                        const rr = await getMyReferrer().catch(() => ({ has_referrer: true } as any))
-                        if (rr?.has_referrer) {
-                          setHasReferrer(true)
-                          setReferrer(rr.referrer ?? null)
-                        }
-                        setBanner({ type: 'success', text: 'Referral applied.' })
-                        setRefCode('')
-                      }
-                      const [b, r] = await Promise.all([
-                        getBalance().catch(() => ({ balance: 0 })),
-                        getMyReferral().catch(() => null as any),
-                      ])
-                      setBalance(b?.balance ?? 0)
-                      if (r?.code) setMyRef(r)
-                    } catch (e: any) {
-                      setBanner({ type: 'error', text: friendlyError(e) })
-                    } finally {
-                      setSaving(false)
-                      setTimeout(() => setBanner(null), 3000)
-                    }
-                  }}
-                  className="rounded-full bg-white text-black px-4 py-2 text-sm font-semibold hover:bg-gray-200 disabled:opacity-50"
-                >
-                  {saving ? 'Boosting…' : 'Boost signal'}
-                </button>
-              </div>
-
+              {/* Referral link (always visible) */}
               <div className="mt-5">
                 <label className="mb-1 block text-sm text-white/70">Your referral link</label>
                 {loading ? (
@@ -296,7 +324,8 @@ useEffect(() => {
                       onClick={() => {
                         if (!myRef?.shareUrl) return
                         navigator.clipboard.writeText(myRef.shareUrl)
-                        setCopied(true); setTimeout(() => setCopied(false), 1500)
+                        setCopied(true)
+                        setTimeout(() => setCopied(false), 1500)
                       }}
                       className={`rounded-lg px-3 text-sm font-semibold transition ${
                         copied ? 'bg-emerald-500 text-black' : 'bg-white text-black hover:bg-gray-200 disabled:opacity-50'
@@ -308,6 +337,7 @@ useEffect(() => {
                 )}
               </div>
 
+              {/* Tip */}
               <div className="mt-4 rounded-lg border border-white/10 bg-gradient-to-br from-cyan-500/5 via-transparent to-violet-500/10 p-3">
                 <div className="text-xs text-white/70">
                   Tip: higher engagement unlocks bonus multipliers during AI signal drops.
