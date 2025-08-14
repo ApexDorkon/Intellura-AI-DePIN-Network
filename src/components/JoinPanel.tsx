@@ -16,6 +16,7 @@ declare global { interface Window { ethereum?: any } }
 
 const shortAddr = (a: string) => (a && a.length > 10 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a || '')
 const isLikelyRef = (s: string) => /^[A-Z0-9]{4,12}$/.test((s || '').trim())
+const isHexWallet = (w?: string) => !!(w && w.startsWith('0x') && w.length === 42)
 
 function friendlyError(err: unknown): string {
   const raw = (err as any)?.message ?? err
@@ -30,25 +31,30 @@ function friendlyError(err: unknown): string {
 export default function JoinPanel() {
   const { me } = useAuth()
 
-  // Normalize profile fields (no useMemo — keep it simple)
+  // Profile
   const username = (me as any)?.handle ?? (me as any)?.x_username ?? 'User'
   const avatar = (me as any)?.avatarUrl ?? (me as any)?.profile_image_url ?? ''
   const walletFromMe = String((me as any)?.wallet_address ?? '').toLowerCase()
 
-  // State
-  const [walletAddress, setWalletAddress] = useState<string>(walletFromMe)
-  const [connecting, setConnecting] = useState(false)
+  // Local wallet (used only immediately after connect, or before /me resolves)
+  const [walletAddress, setWalletAddress] = useState<string>('')
 
+  // Always sync from /me when it changes
+  useEffect(() => {
+    if (walletFromMe) setWalletAddress(walletFromMe)
+  }, [walletFromMe])
+
+  // Effective wallet: prefer /me, fall back to local while /me is catching up
+  const effectiveWallet = walletFromMe || walletAddress
+  const hasWallet = isHexWallet(effectiveWallet)
+
+  const [connecting, setConnecting] = useState(false)
   const [balance, setBalance] = useState<number>(0)
   const [myRef, setMyRef] = useState<{ code: string; shareUrl: string } | null>(null)
 
   const [refCode, setRefCode] = useState('')
   const [hasReferrer, setHasReferrer] = useState<boolean | null>(null)
-  const [referrer, setReferrer] = useState<{
-    x_username: string
-    profile_image_url?: string
-    code?: string
-  } | null>(null)
+  const [referrer, setReferrer] = useState<{ x_username: string; profile_image_url?: string; code?: string } | null>(null)
 
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -56,16 +62,7 @@ export default function JoinPanel() {
   const [fieldErr, setFieldErr] = useState<{ wallet?: string; ref?: string }>({})
   const [copied, setCopied] = useState(false)
 
-  // Always keep local wallet in sync with /me
-  useEffect(() => {
-    setWalletAddress(walletFromMe)
-  }, [walletFromMe])
-
-  // Derived
-  const hasWallet =
-    !!(walletAddress && walletAddress.startsWith('0x') && walletAddress.length === 42)
-
-  // Load points, code, referrer after auth
+  // Load points, code, referrer
   useEffect(() => {
     if (!me) return
     let mounted = true
@@ -91,7 +88,7 @@ export default function JoinPanel() {
     return () => { mounted = false }
   }, [me])
 
-  // Wallet connect (nonce + signature + link)
+  // Connect wallet (nonce + signature + link)
   const handleConnectWallet = async () => {
     setFieldErr({})
     setBanner(null)
@@ -109,7 +106,7 @@ export default function JoinPanel() {
       const signature = await signer.signMessage(`Sign this nonce to authenticate: ${nonce}`)
       await connectWallet(addr, signature)
 
-      // Update local immediately (backend also saves)
+      // Show immediately; /me will also return it on next fetch
       setWalletAddress(addr)
       setBanner({ type: 'success', text: 'Wallet connected.' })
     } catch (e: any) {
@@ -137,9 +134,7 @@ export default function JoinPanel() {
               <div className="w-full max-w-3xl flex flex-col sm:flex-row items-center justify-between gap-6">
                 <div className="text-center sm:text-left">
                   <h3 className="text-3xl font-extrabold text-white">Join Intellura</h3>
-                  <p className="mt-3 text-white/80">
-                    Connect your X account to unlock referrals and start earning points.
-                  </p>
+                  <p className="mt-3 text-white/80">Connect your X account to unlock referrals and start earning points.</p>
                 </div>
                 <a
                   href={`${API_BASE}/auth/x/login`}
@@ -204,7 +199,7 @@ export default function JoinPanel() {
                 {hasWallet ? (
                   <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white/80">
                     <span className="h-2 w-2 rounded-full bg-emerald-400" />
-                    {shortAddr(walletAddress || walletFromMe)}
+                    {shortAddr(effectiveWallet)}
                   </span>
                 ) : (
                   <button
@@ -242,7 +237,7 @@ export default function JoinPanel() {
                 </div>
               </div>
 
-              {/* Show referral input + CTA ONLY if user has no referrer yet */}
+              {/* Referral input + CTA ONLY if no referrer yet */}
               {hasReferrer === false && (
                 <>
                   <div className="mt-4">
@@ -277,7 +272,6 @@ export default function JoinPanel() {
                         try {
                           setSaving(true)
                           await applyReferralAPI(code)
-                          // recheck referrer after apply
                           const rr = await getMyReferrer().catch(() => ({ has_referrer: true } as any))
                           if (rr?.has_referrer) {
                             setHasReferrer(true)
@@ -285,7 +279,6 @@ export default function JoinPanel() {
                           }
                           setBanner({ type: 'success', text: 'Referral applied.' })
                           setRefCode('')
-                          // refresh balance & my code
                           const [b, r] = await Promise.all([
                             getBalance().catch(() => ({ balance: 0 })),
                             getMyReferral().catch(() => null as any),
@@ -307,7 +300,7 @@ export default function JoinPanel() {
                 </>
               )}
 
-              {/* Referral link (always visible) */}
+              {/* Referral link */}
               <div className="mt-5">
                 <label className="mb-1 block text-sm text-white/70">Your referral link</label>
                 {loading ? (
