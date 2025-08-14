@@ -3,21 +3,16 @@ import { useEffect, useState } from 'react'
 import { BrowserProvider } from 'ethers'
 import { useAuth } from '../state/auth'
 import {
-  getBalance,
-  getMyReferral,
-  getMyReferrer,
-  getWalletNonce,
-  connectWallet,
+  getBalance, getMyReferral, getMyReferrer,
+  getWalletNonce, connectWallet,
   applyReferral as applyReferralAPI,
 } from '../lib/api'
 import { API_BASE } from '../lib/config'
 
 declare global { interface Window { ethereum?: any } }
 
-// ---- helpers ----
 const shortAddr = (a: string) => (a && a.length > 10 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a || '')
 const isLikelyRef = (s: string) => /^[A-Z0-9]{4,12}$/.test((s || '').trim())
-// stricter hex check to avoid false positives
 const isHexWallet = (w?: string) => !!(w && /^0x[a-f0-9]{40}$/.test(w))
 
 function friendlyError(err: unknown): string {
@@ -30,25 +25,22 @@ function friendlyError(err: unknown): string {
   return 'Something went wrong.'
 }
 
-// best-effort auth refresh (works even if not implemented)
 async function refreshAuthIfAvailable() {
   try {
     const st = (useAuth as any).getState?.()
     const fn = st?.refresh
     if (typeof fn === 'function') await fn()
-  } catch { /* no-op */ }
+  } catch {}
 }
 
 export default function JoinPanel() {
   const { me } = useAuth()
 
-  // ----- Profile from /me (single source of truth) -----
   const username = (me as any)?.handle ?? (me as any)?.x_username ?? 'User'
   const avatar   = (me as any)?.avatarUrl ?? (me as any)?.profile_image_url ?? ''
   const walletFromMe = String((me as any)?.wallet_address ?? '').toLowerCase()
   const hasWallet = isHexWallet(walletFromMe)
 
-  // ----- UI state -----
   const [connecting, setConnecting] = useState(false)
   const [balance, setBalance] = useState<number>(0)
   const [myRef, setMyRef] = useState<{ code: string; shareUrl: string } | null>(null)
@@ -61,7 +53,6 @@ export default function JoinPanel() {
   const [fieldErr, setFieldErr] = useState<{ wallet?: string; ref?: string }>({})
   const [copied, setCopied] = useState(false)
 
-  // ----- After auth: load points, my code, and referrer state -----
   useEffect(() => {
     if (!me) return
     let mounted = true
@@ -87,7 +78,6 @@ export default function JoinPanel() {
     return () => { mounted = false }
   }, [me])
 
-  // ----- Connect wallet (backend persists; UI reads from /me) -----
   const handleConnectWallet = async () => {
     setFieldErr({})
     setBanner(null)
@@ -106,8 +96,6 @@ export default function JoinPanel() {
       await connectWallet(addr, signature)
 
       setBanner({ type: 'success', text: 'Wallet connected.' })
-
-      // pull fresh /me so wallet badge appears immediately
       await refreshAuthIfAvailable()
     } catch (e: any) {
       const msg = friendlyError(e)
@@ -121,7 +109,6 @@ export default function JoinPanel() {
     }
   }
 
-  // ---------- Not authenticated ----------
   if (!me) {
     return (
       <section className="bg-[#0B0D12]">
@@ -150,7 +137,6 @@ export default function JoinPanel() {
     )
   }
 
-  // ---------- Authenticated ----------
   return (
     <section className="bg-[#0B0D12]">
       <div className="mx-auto max-w-6xl px-4 py-12">
@@ -184,11 +170,7 @@ export default function JoinPanel() {
                     <div className="mt-1 inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs text-white/80">
                       <span className="opacity-75">Invited by</span>
                       {referrer.profile_image_url && (
-                        <img
-                          src={referrer.profile_image_url}
-                          alt={referrer.x_username}
-                          className="h-4 w-4 rounded-full"
-                        />
+                        <img src={referrer.profile_image_url} alt={referrer.x_username} className="h-4 w-4 rounded-full" />
                       )}
                       <span className="font-medium">@{referrer.x_username}</span>
                     </div>
@@ -196,22 +178,30 @@ export default function JoinPanel() {
                 </div>
               </div>
 
-              <h3 className="text-lg font-semibold text-white">Tune in to the signal</h3>
-              <p className="mt-2 text-sm text-white/70">
-                Link your on-chain wallet to start tracking rewards. Add an invite code to boost your starting signal.
-              </p>
+              {/* COPY CHANGES HERE */}
+              {hasWallet ? (
+                <>
+                  <h3 className="text-lg font-semibold text-white" aria-live="polite">Signal Working</h3>
+                  <p className="mt-2 text-sm text-white/70">You are broadcasting your signal.</p>
+                </>
+              ) : (
+                <>
+                  <h3 className="text-lg font-semibold text-white">Tune in to the signal</h3>
+                  <p className="mt-2 text-sm text-white/70">
+                    Link your on-chain wallet to start tracking rewards. Add an invite code to boost your starting signal.
+                  </p>
+                </>
+              )}
 
               <div className="mt-4 flex flex-col gap-2 max-w-xs">
                 {hasWallet ? (
                   <span
-  className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white/80"
-  style={{ minWidth: `${walletFromMe.length}ch` }} // match pill length to wallet length
->
-  <span
-    className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse-slow"
-  />
-  {shortAddr(walletFromMe)}
-</span>
+                    className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white/80"
+                    style={{ minWidth: `${walletFromMe.length + 2}ch` }}  // little bigger than the address
+                  >
+                    <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse-slow" />
+                    {shortAddr(walletFromMe)}
+                  </span>
                 ) : (
                   <button
                     onClick={handleConnectWallet}
@@ -221,7 +211,6 @@ export default function JoinPanel() {
                     {connecting ? 'Connecting…' : '🦊 Connect wallet'}
                   </button>
                 )}
-
                 {fieldErr.wallet && <div className="text-xs text-rose-400">{fieldErr.wallet}</div>}
               </div>
             </div>
@@ -239,7 +228,6 @@ export default function JoinPanel() {
                 </div>
               </div>
 
-              {/* Referral input + CTA ONLY when user has no referrer */}
               {hasReferrer === false && (
                 <>
                   <div className="mt-4">
@@ -302,7 +290,6 @@ export default function JoinPanel() {
                 </>
               )}
 
-              {/* Referral link (always visible) */}
               <div className="mt-5">
                 <label className="mb-1 block text-sm text-white/70">Your referral link</label>
                 {loading ? (
@@ -332,7 +319,6 @@ export default function JoinPanel() {
                 )}
               </div>
 
-              {/* Tip */}
               <div className="mt-4 rounded-lg border border-white/10 bg-gradient-to-br from-cyan-500/5 via-transparent to-violet-500/10 p-3">
                 <div className="text-xs text-white/70">
                   Tip: higher engagement unlocks bonus multipliers during AI signal drops.
