@@ -31,6 +31,7 @@ export default function JoinPanel() {
   const { me } = useAuth()
   const username = useMemo(() => (me as any)?.handle ?? (me as any)?.x_username ?? 'User', [me])
   const avatar   = useMemo(() => (me as any)?.avatarUrl ?? (me as any)?.profile_image_url ?? '', [me])
+  
   const initialWallet = useMemo(
     () => ((me as any)?.wallet_address ?? '').toString().toLowerCase(),
     [me],
@@ -48,10 +49,11 @@ export default function JoinPanel() {
   const [banner, setBanner] = useState<{ type: 'error' | 'success'; text: string } | null>(null)
   const [fieldErr, setFieldErr] = useState<{ wallet?: string; ref?: string }>({})
   const [copied, setCopied] = useState(false)
-
-  useEffect(() => {
-    if (initialWallet && !walletAddress) setWalletAddress(initialWallet)
-  }, [initialWallet, walletAddress])
+const hasWallet = !!(walletAddress || initialWallet) && (walletAddress || initialWallet).startsWith('0x')
+// AFTER: always keep local state in sync with /me
+useEffect(() => {
+  setWalletAddress((prev) => (initialWallet && initialWallet !== prev ? initialWallet : prev))
+}, [initialWallet])
 
   useEffect(() => {
     if (!me) return
@@ -173,31 +175,34 @@ export default function JoinPanel() {
                 Link your on-chain wallet to start tracking rewards. Add an invite code to boost your starting signal.
               </p>
 
-              <div className="mt-4 flex flex-col gap-2 max-w-xs">
-                {(walletAddress || initialWallet) ? (
-                  <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white/80">
-                    <span className="h-2 w-2 rounded-full bg-emerald-400" />
-                    {shortAddr(walletAddress || initialWallet)}
-                  </span>
-                ) : (
-                  <button
-                    onClick={handleConnectWallet}
-                    disabled={connecting}
-                    className="rounded-full bg-white text-black px-4 py-2 text-sm font-semibold hover:bg-gray-200 disabled:opacity-60"
-                  >
-                    {connecting ? 'Connecting…' : '🦊 Connect wallet'}
-                  </button>
-                )}
-                {walletAddress && (
-                  <button
-                    onClick={handleConnectWallet}
-                    className="rounded-full border border-white/20 px-3 py-2 text-sm text-white/80 hover:bg-white/10"
-                  >
-                    Change
-                  </button>
-                )}
-                {fieldErr.wallet && <div className="text-xs text-rose-400">{fieldErr.wallet}</div>}
-              </div>
+             <div className="mt-4 flex flex-col gap-2 max-w-xs">
+  {hasWallet ? (
+    <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white/80">
+      <span className="h-2 w-2 rounded-full bg-emerald-400" />
+      {shortAddr(walletAddress || initialWallet)}
+    </span>
+  ) : (
+    <button
+      onClick={handleConnectWallet}
+      disabled={connecting}
+      className="rounded-full bg-white text-black px-4 py-2 text-sm font-semibold hover:bg-gray-200 disabled:opacity-60"
+    >
+      {connecting ? 'Connecting…' : '🦊 Connect wallet'}
+    </button>
+  )}
+
+  {/* Optional: keep "Change" only if you want to allow re-linking */}
+  {hasWallet && (
+    <button
+      onClick={handleConnectWallet}
+      className="rounded-full border border-white/20 px-3 py-2 text-sm text-white/80 hover:bg-white/10"
+    >
+      Change
+    </button>
+  )}
+
+  {fieldErr.wallet && <div className="text-xs text-rose-400">{fieldErr.wallet}</div>}
+</div>
             </div>
 
             {/* Right */}
