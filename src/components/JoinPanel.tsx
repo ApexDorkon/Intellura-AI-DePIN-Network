@@ -144,7 +144,7 @@ export default function JoinPanel() {
             }`}>{banner.text}</div>
           )}
 
-          <div className="grid gap-8 md:grid-cols-2">
+          <div className="grid items-stretch gap-8 md:grid-cols-2">
             {/* Left — Profile + centered signal/wallet */}
             <div>
               <div className="flex items-center gap-4">
@@ -166,14 +166,15 @@ export default function JoinPanel() {
                 </div>
               </div>
 
-              {/* Centered block */}
-              <div className="mt-6 max-w-md mx-auto text-center">
+              {/* Signal block, vertically centered between header and bottom */}
+          <div className="flex-1" />
+         <div className="max-w-md text-left">
                 <h3 className="text-xl font-semibold text-white">Tune in to the signal</h3>
                 <p className="mt-1 text-sm text-white/60">
                   Link your on-chain wallet to start tracking rewards. Add an invite code to boost your starting signal.
                 </p>
 
-                <div className="mt-5 flex flex-col items-center gap-2">
+                <div className="mt-5 flex flex-col gap-2">
                   {(walletAddress || initialWallet) ? (
                     <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white/80">
                       <span className="h-2 w-2 rounded-full bg-emerald-400" />
@@ -198,7 +199,8 @@ export default function JoinPanel() {
                   )}
                   {fieldErr.wallet && <div className="text-xs text-rose-400">{fieldErr.wallet}</div>}
                 </div>
-              </div>
+             </div>
+              <div className="flex-1" />
             </div>
 
             {/* Right — Status (top) + Referral + CTA + Link */}
