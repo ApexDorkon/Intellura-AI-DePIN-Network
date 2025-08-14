@@ -203,10 +203,15 @@ export default function JoinPanel() {
 
               <div className="mt-4 flex flex-col gap-2 max-w-xs">
                 {hasWallet ? (
-                  <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white/80">
-                    <span className="h-2 w-2 rounded-full bg-emerald-400" />
-                    {shortAddr(walletFromMe)}
-                  </span>
+                  <span
+  className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white/80"
+  style={{ minWidth: `${walletFromMe.length}ch` }} // match pill length to wallet length
+>
+  <span
+    className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse-slow"
+  />
+  {shortAddr(walletFromMe)}
+</span>
                 ) : (
                   <button
                     onClick={handleConnectWallet}
