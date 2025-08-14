@@ -127,7 +127,7 @@ export default function JoinPanel() {
                   href={`${API_BASE}/auth/x/login`}
                   className="inline-flex items-center gap-2 rounded-full bg-white px-6 py-3 font-semibold text-black border border-white/20 hover:bg-gray-200 transition"
                 >
-                  <span>Connect X</span><span className="text-lg">𝕏</span>
+                  <span>Connect</span><span className="text-lg">𝕏</span>
                 </a>
               </div>
             </div>
