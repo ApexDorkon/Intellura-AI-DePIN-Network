@@ -19,6 +19,24 @@ declare global {
 const shortAddr = (a: string) => (a?.length > 10 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a ?? '')
 const isLikelyRef = (s: string) => /^[A-Z0-9]{4,12}$/.test(s.trim())
 
+function friendlyError(err: unknown): string {
+  // Our api.ts throws Error(message) where message might be a JSON string
+  const raw = (err as any)?.message ?? err
+  if (typeof raw === 'string') {
+    try {
+      const j = JSON.parse(raw)
+      if (j?.detail) return String(j.detail)
+    } catch {}
+    // common FastAPI shapes
+    if (raw.includes('"detail"')) {
+      const m = raw.match(/"detail"\s*:\s*"([^"]+)"/)
+      if (m?.[1]) return m[1]
+    }
+    return raw
+  }
+  return 'Something went wrong.'
+}
+
 export default function JoinPanel() {
   const { me } = useAuth()
 
@@ -56,6 +74,7 @@ export default function JoinPanel() {
   const [saving, setSaving] = useState(false)
   const [banner, setBanner] = useState<{ type: 'error' | 'success'; text: string } | null>(null)
   const [fieldErr, setFieldErr] = useState<{ wallet?: string; ref?: string }>({})
+  const [copied, setCopied] = useState(false)
 
   // Initialize wallet from /me as soon as it exists
   useEffect(() => {
@@ -116,19 +135,15 @@ export default function JoinPanel() {
       setWalletAddress(addr)
       setBanner({ type: 'success', text: 'Wallet connected.' })
     } catch (e: any) {
-      const msg = typeof e?.message === 'string' ? e.message : 'Failed to connect wallet'
+      const msg = friendlyError(e)
       if (!/user rejected/i.test(msg)) {
         setFieldErr((p) => ({ ...p, wallet: msg }))
         setBanner({ type: 'error', text: msg })
       }
     } finally {
       setConnecting(false)
-      dismissBannerSoon()
+      setTimeout(() => setBanner(null), 3000)
     }
-  }
-
-  const dismissBannerSoon = () => {
-    setTimeout(() => setBanner(null), 3000)
   }
 
   /* =========================
@@ -139,6 +154,7 @@ export default function JoinPanel() {
       <section className="bg-[#0B0D12]">
         <div className="mx-auto max-w-6xl px-4 py-16">
           <div className="relative overflow-hidden rounded-3xl border border-white/10">
+            {/* Heavy veil */}
             <div className="absolute inset-0 backdrop-blur-3xl backdrop-saturate-50" />
             <div className="absolute inset-0 bg-black/60" />
             <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/10 via-transparent to-violet-500/15" />
@@ -186,7 +202,7 @@ export default function JoinPanel() {
           )}
 
           <div className="grid gap-8 md:grid-cols-2">
-            {/* Left — Profile + Setup */}
+            {/* Left — Profile + Wallet */}
             <div>
               {/* Profile header */}
               <div className="flex items-center gap-4">
@@ -215,76 +231,121 @@ export default function JoinPanel() {
                 </div>
               </div>
 
-              {/* Setup form */}
-              <h3 className="mt-6 text-xl font-semibold text-white">Finish setup</h3>
+              {/* “Signals” phrasing */}
+              <h3 className="mt-6 text-xl font-semibold text-white">Tune in to the signal</h3>
               <p className="mt-1 text-sm text-white/60">
-                Connect a wallet and (optionally) enter a referral code for a bonus.
+                Link your on-chain wallet to start tracking rewards. Add an invite code to boost your starting signal.
               </p>
 
-              <div className="mt-5 grid gap-4">
-                {/* Wallet section */}
-                <div className="flex flex-col gap-2">
-                  <div className="flex flex-wrap items-center gap-3">
-                    {(walletAddress || initialWallet) ? (
-                      <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white/80">
-                        <span className="h-2 w-2 rounded-full bg-emerald-400" />
-                        {shortAddr(walletAddress || initialWallet)}
-                      </span>
-                    ) : (
-                      <button
-                        onClick={handleConnectWallet}
-                        disabled={connecting}
-                        className="rounded-full bg-white text-black px-4 py-2 text-sm font-semibold hover:bg-gray-200 disabled:opacity-60"
-                      >
-                        {connecting ? 'Connecting…' : '🦊 Connect wallet'}
-                      </button>
-                    )}
-                    {/* Change wallet only if none from /me OR user just connected */}
-                    {walletAddress && (
-                      <button
-                        onClick={handleConnectWallet}
-                        className="rounded-full border border-white/20 px-3 py-2 text-sm text-white/80 hover:bg-white/10"
-                      >
-                        Change
-                      </button>
-                    )}
-                  </div>
-                  {fieldErr.wallet && (
-                    <div className="text-xs text-rose-400">{fieldErr.wallet}</div>
+              {/* Wallet section */}
+              <div className="mt-5 flex flex-col gap-2">
+                <div className="flex flex-wrap items-center gap-3">
+                  {(walletAddress || initialWallet) ? (
+                    <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white/80">
+                      <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                      {shortAddr(walletAddress || initialWallet)}
+                    </span>
+                  ) : (
+                    <button
+                      onClick={handleConnectWallet}
+                      disabled={connecting}
+                      className="rounded-full bg-white text-black px-4 py-2 text-sm font-semibold hover:bg-gray-200 disabled:opacity-60"
+                    >
+                      {connecting ? 'Connecting…' : '🦊 Connect wallet'}
+                    </button>
+                  )}
+                  {walletAddress && (
+                    <button
+                      onClick={handleConnectWallet}
+                      className="rounded-full border border-white/20 px-3 py-2 text-sm text-white/80 hover:bg-white/10"
+                    >
+                      Change
+                    </button>
                   )}
                 </div>
+                {fieldErr.wallet && <div className="text-xs text-rose-400">{fieldErr.wallet}</div>}
+              </div>
+            </div>
 
-                {/* Referral field — only if user has no referrer yet */}
-                {hasReferrer === false && (
-                  <div>
-                    <label className="mb-1 block text-sm text-white/70">
-                      Referral code <span className="text-white/40">(optional, +5 points)</span>
-                    </label>
+            {/* Right — Referral + Status */}
+            <div>
+              {/* Referral input FIRST */}
+              {hasReferrer === false && (
+                <div className="mb-6">
+                  <label className="mb-1 block text-sm text-white/70">
+                    Referral code <span className="text-white/40">(optional, +100 points)</span>
+                  </label>
+                  <input
+                    value={refCode}
+                    onChange={(e) => {
+                      setRefCode(e.target.value.toUpperCase())
+                      if (fieldErr.ref) setFieldErr((p) => ({ ...p, ref: undefined }))
+                    }}
+                    placeholder="FUDCH8"
+                    className={`w-full rounded-lg bg-black/40 text-white placeholder-white/30 border px-3 py-2 outline-none focus:ring-2 ${
+                      fieldErr.ref ? 'border-rose-500 focus:ring-rose-500' : 'border-white/10 focus:ring-violet-500'
+                    }`}
+                  />
+                  {fieldErr.ref && <div className="mt-1 text-xs text-rose-400">{fieldErr.ref}</div>}
+                </div>
+              )}
+
+              {/* Referral link */}
+              <div>
+                <label className="mb-1 block text-sm text-white/70">Your referral link</label>
+                {loading ? (
+                  <div className="h-10 w-full animate-pulse rounded-lg bg-white/10" />
+                ) : (
+                  <div className="flex items-stretch gap-2">
                     <input
-                      value={refCode}
-                      onChange={(e) => {
-                        setRefCode(e.target.value.toUpperCase())
-                        if (fieldErr.ref) setFieldErr((p) => ({ ...p, ref: undefined }))
-                      }}
-                      placeholder="FUDCH8"
-                      className={`w-full rounded-lg bg-black/40 text-white placeholder-white/30 border px-3 py-2 outline-none focus:ring-2 ${
-                        fieldErr.ref ? 'border-rose-500 focus:ring-rose-500' : 'border-white/10 focus:ring-violet-500'
-                      }`}
+                      readOnly
+                      value={myRef?.shareUrl ?? 'Generating…'}
+                      className="flex-1 rounded-lg bg-black/40 text-white border border-white/10 px-3 py-2"
                     />
-                    {fieldErr.ref && <div className="mt-1 text-xs text-rose-400">{fieldErr.ref}</div>}
+                    <button
+                      disabled={!myRef?.shareUrl}
+                      onClick={() => {
+                        if (!myRef?.shareUrl) return
+                        navigator.clipboard.writeText(myRef.shareUrl)
+                        setCopied(true)
+                        setTimeout(() => setCopied(false), 1500)
+                      }}
+                      className={`rounded-lg px-4 font-semibold transition ${
+                        copied
+                          ? 'bg-emerald-500 text-black'
+                          : 'bg-white text-black hover:bg-gray-200 disabled:opacity-50'
+                      }`}
+                    >
+                      {copied ? 'Copied!' : 'Copy'}
+                    </button>
                   </div>
+                )}
+                {!myRef?.code && !loading && (
+                  <p className="mt-2 text-xs text-white/50">No code yet? It will appear here once created.</p>
                 )}
               </div>
 
-              {/* Actions */}
-              <div className="mt-6 flex items-center gap-3">
+              {/* Points pill */}
+              <div className="mt-6 flex items-center justify-between">
+                <div>
+                  <h4 className="text-xl font-bold text-white">Your Intellura status</h4>
+                  <p className="text-white/70">Keep sharing and earning.</p>
+                </div>
+
+                <div className="rounded-xl bg-black/40 border border-white/10 px-4 py-3">
+                  <div className="text-xs text-white/60">Points</div>
+                  <div className="text-2xl font-extrabold text-white">{loading ? '—' : balance}</div>
+                </div>
+              </div>
+
+              {/* CTA */}
+              <div className="mt-6">
                 <button
                   disabled={(hasReferrer !== false || !refCode.trim()) && !walletAddress}
                   onClick={async () => {
                     setFieldErr({})
                     setBanner(null)
 
-                    // If we’re only submitting a referral:
                     if (hasReferrer === false) {
                       const code = refCode.trim().toUpperCase()
                       if (code && !isLikelyRef(code)) {
@@ -307,7 +368,6 @@ export default function JoinPanel() {
                         setRefCode('')
                       }
 
-                      // Refresh points & my own referral code
                       const [b, r] = await Promise.all([
                         getBalance().catch(() => ({ balance: 0 })),
                         getMyReferral().catch(() => null as any),
@@ -315,59 +375,19 @@ export default function JoinPanel() {
                       setBalance(b?.balance ?? 0)
                       if (r?.code) setMyRef(r)
                     } catch (e: any) {
-                      const msg = typeof e?.message === 'string' ? e.message : 'Failed to save'
-                      setBanner({ type: 'error', text: msg })
+                      setBanner({ type: 'error', text: friendlyError(e) })
                     } finally {
                       setSaving(false)
-                      dismissBannerSoon()
+                      setTimeout(() => setBanner(null), 3000)
                     }
                   }}
                   className="rounded-full bg-white text-black px-5 py-2 font-semibold hover:bg-gray-200 disabled:opacity-50"
                 >
-                  {saving ? 'Saving…' : 'Save'}
+                  {saving ? 'Joining…' : 'Join signal'}
                 </button>
               </div>
-            </div>
 
-            {/* Right — Status (points + referral) */}
-            <div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <h4 className="text-xl font-bold text-white">Your Intellura status</h4>
-                  <p className="text-white/70">Keep sharing and earning.</p>
-                </div>
-
-                <div className="rounded-xl bg-black/40 border border-white/10 px-4 py-3">
-                  <div className="text-xs text-white/60">Points</div>
-                  <div className="text-2xl font-extrabold text-white">{loading ? '—' : balance}</div>
-                </div>
-              </div>
-
-              <div className="mt-6">
-                <label className="mb-1 block text-sm text-white/70">Your referral link</label>
-                {loading ? (
-                  <div className="h-10 w-full animate-pulse rounded-lg bg-white/10" />
-                ) : (
-                  <div className="flex items-stretch gap-2">
-                    <input
-                      readOnly
-                      value={myRef?.shareUrl ?? 'Generating…'}
-                      className="flex-1 rounded-lg bg-black/40 text-white border border-white/10 px-3 py-2"
-                    />
-                    <button
-                      disabled={!myRef?.shareUrl}
-                      onClick={() => myRef?.shareUrl && navigator.clipboard.writeText(myRef.shareUrl)}
-                      className="rounded-lg bg-white px-4 font-semibold text-black hover:bg-gray-200 disabled:opacity-50"
-                    >
-                      Copy
-                    </button>
-                  </div>
-                )}
-                {!myRef?.code && !loading && (
-                  <p className="mt-2 text-xs text-white/50">No code yet? It will appear here once created.</p>
-                )}
-              </div>
-
+              {/* Tip */}
               <div className="mt-6 rounded-xl border border-white/10 bg-gradient-to-br from-cyan-500/5 via-transparent to-violet-500/10 p-4">
                 <div className="text-sm text-white/80">
                   Tip: higher engagement unlocks bonus multipliers during AI signal drops.
