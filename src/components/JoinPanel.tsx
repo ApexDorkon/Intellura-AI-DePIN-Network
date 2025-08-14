@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { BrowserProvider } from 'ethers' // ethers v6
 import { useAuth } from '../state/auth'
 import {
   getBalance,
@@ -8,6 +9,10 @@ import {
   applyReferral as applyReferralAPI,
 } from '../lib/api'
 import { API_BASE } from '../lib/config'
+
+function shortAddr(a: string) {
+  return a.length > 10 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a
+}
 
 export default function JoinPanel() {
   const { me } = useAuth()
@@ -19,7 +24,10 @@ export default function JoinPanel() {
   const [balance, setBalance] = useState<number>(0)
   const [myRef, setMyRef] = useState<{ code: string; shareUrl: string } | null>(null)
 
-  const [wallet, setWallet] = useState('')
+  // wallet + referral UI state
+  const [walletAddress, setWalletAddress] = useState<string>('')  // filled after connect
+  const [connecting, setConnecting] = useState(false)
+
   const [refCode, setRefCode] = useState('')
   const [hasReferrer, setHasReferrer] = useState<boolean | null>(null)
   const [referrer, setReferrer] = useState<{
@@ -60,6 +68,37 @@ export default function JoinPanel() {
       mounted = false
     }
   }, [me])
+
+  // Connect wallet => save to backend => reflect in UI
+  const handleConnectWallet = async () => {
+    setErrorMsg(null)
+    try {
+      if (!('ethereum' in window)) {
+        throw new Error('MetaMask not detected. Please install or enable it.')
+      }
+      setConnecting(true)
+
+    const eth = (window as any).ethereum
+if (!eth) throw new Error('MetaMask not detected. Please install or enable it.')
+
+const provider = new BrowserProvider(eth)
+await eth.request({ method: 'eth_requestAccounts' })
+const signer = await provider.getSigner()
+const addr = (await signer.getAddress()).toLowerCase()
+      // Persist on server
+      await setWalletAPI(addr)
+
+      setWalletAddress(addr)
+      setSuccessMsg('Wallet connected!')
+      setTimeout(() => setSuccessMsg(null), 2000)
+    } catch (e: any) {
+      // Silently ignore user-reject scenarios; otherwise show message
+      const msg = typeof e?.message === 'string' ? e.message : 'Failed to connect wallet'
+      if (!/User rejected/i.test(msg)) setErrorMsg(msg)
+    } finally {
+      setConnecting(false)
+    }
+  }
 
   /* =========================
      Not authenticated
@@ -109,14 +148,12 @@ export default function JoinPanel() {
             <div>
               {/* Profile header */}
               <div className="flex items-center gap-4">
-                <div className="relative">
-                  <div className="h-12 w-12 overflow-hidden rounded-full ring-2 ring-white/10">
-                    {avatar ? (
-                      <img src={avatar} alt={username} className="h-full w-full object-cover" />
-                    ) : (
-                      <div className="h-full w-full bg-white/10" />
-                    )}
-                  </div>
+                <div className="h-12 w-12 overflow-hidden rounded-full ring-2 ring-white/10">
+                  {avatar ? (
+                    <img src={avatar} alt={username} className="h-full w-full object-cover" />
+                  ) : (
+                    <div className="h-full w-full bg-white/10" />
+                  )}
                 </div>
                 <div>
                   <div className="text-white font-semibold text-lg">@{username}</div>
@@ -138,17 +175,37 @@ export default function JoinPanel() {
 
               {/* Setup form */}
               <h3 className="mt-6 text-xl font-semibold text-white">Finish setup</h3>
-              <p className="mt-1 text-sm text-white/60">Add a wallet and (optionally) a referral code.</p>
+              <p className="mt-1 text-sm text-white/60">
+                Connect a wallet and (optionally) enter a referral code for a bonus.
+              </p>
 
               <div className="mt-5 grid gap-4">
-                <div>
-                  <label className="mb-1 block text-sm text-white/70">Wallet address</label>
-                  <input
-                    value={wallet}
-                    onChange={(e) => setWallet(e.target.value)}
-                    placeholder="0x…"
-                    className="w-full rounded-lg bg-black/40 text-white placeholder-white/30 border border-white/10 px-3 py-2 outline-none focus:ring-2 focus:ring-cyan-500"
-                  />
+                {/* Wallet connect row */}
+                <div className="flex flex-wrap items-center gap-3">
+                  {walletAddress ? (
+                    <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white/80">
+                      <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                      {shortAddr(walletAddress)}
+                    </span>
+                  ) : (
+                    <button
+                      onClick={handleConnectWallet}
+                      disabled={connecting}
+                      className="rounded-full bg-white text-black px-4 py-2 text-sm font-semibold hover:bg-gray-200 disabled:opacity-60"
+                    >
+                      {connecting ? 'Connecting…' : '🦊 Connect wallet'}
+                    </button>
+                  )}
+
+                  {/* Let users change wallet */}
+                  {walletAddress && (
+                    <button
+                      onClick={handleConnectWallet}
+                      className="rounded-full border border-white/20 px-3 py-2 text-sm text-white/80 hover:bg-white/10"
+                    >
+                      Change
+                    </button>
+                  )}
                 </div>
 
                 {/* Only show referral input if user does NOT have a referrer yet */}
@@ -170,18 +227,18 @@ export default function JoinPanel() {
               {/* Actions */}
               <div className="mt-6 flex items-center gap-3">
                 <button
-                  disabled={!wallet || saving}
+                  disabled={(!walletAddress && hasReferrer === false && !refCode.trim()) || saving}
                   onClick={async () => {
                     setErrorMsg(null)
                     setSuccessMsg(null)
                     try {
                       setSaving(true)
-                      await setWalletAPI(wallet)
+                      // Wallet already saved in handleConnectWallet; here we only apply referral if present
                       if (hasReferrer === false && refCode.trim()) {
                         await applyReferralAPI(refCode.trim())
-                        setHasReferrer(true) // optimistic; backend will enforce uniqueness
+                        setHasReferrer(true) // optimistic; server enforces uniqueness
                       }
-                      // Refresh right column data
+                      // Refresh points & my referral code
                       const [b, r] = await Promise.all([
                         getBalance().catch(() => ({ balance: 0 })),
                         getMyReferral().catch(() => null as any),
