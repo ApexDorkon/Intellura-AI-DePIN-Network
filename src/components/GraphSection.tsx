@@ -1,7 +1,7 @@
 // src/components/GraphSection.tsx
 import { useEffect, useRef } from 'react'
 
-type Props = { points?: number; muted?: boolean }
+type Props = { points?: number; muted?: boolean } // muted = treat as logged out
 
 export default function GraphSection({ points = 0, muted = false }: Props) {
   const ref = useRef<SVGPathElement>(null)
@@ -10,34 +10,72 @@ export default function GraphSection({ points = 0, muted = false }: Props) {
     let t = 0
     let raf = 0
 
-    const rawLevel = Math.log1p(Math.max(0, points)) / Math.log(101)
-    const level = Math.min(rawLevel, 1)
+    const isFlat = muted || points <= 0
 
-    // When muted (not authed or zero points), keep it *barely* alive:
-    const idleAmp  = muted ? 1 : 3
-    const baseAmp  = (muted ? 8 : 20) * level
-    const baseSpeed = muted ? 0.003 : 0.008 + 0.025 * level
+    // Helper: write a flat line and bail (no RAF, no CPU)
+    const drawFlat = () => {
+      const d = Array.from({ length: 80 }, (_, i) => {
+        const x = (i / 79) * 1000
+        const y = 200
+        return `${i === 0 ? 'M' : 'L'} ${x.toFixed(2)} ${y.toFixed(2)}`
+      }).join(' ')
+      ref.current?.setAttribute('d', d)
+    }
 
-    const pulseFreq  = muted ? 0.05 : 0.15 + 0.6 * level
-    const pulsePower = muted ? 7    : 6 - 4 * level
-    const pulseDepth = muted ? 0.10 : 0.15 + 0.55 * level
+    if (isFlat) {
+      drawFlat()
+      return () => {}
+    }
 
-    const f1 = 0.35 + (muted ? 0.05 : 0.15) * level
-    const f2 = 0.12 + (muted ? 0.05 : 0.10) * level
+    // -------- points-driven mappings --------
+
+    // Pulse power mapping:
+    // 0/unauth → 1; 100 → 10; 150 → 13; 200 → 16; +3 each +50 thereafter
+    const pulsePower =
+      points <= 0
+        ? 1
+        : points <= 100
+          ? 10 // at exactly 100
+          : 10 + 0.06 * (points - 100) // +0.06 per point = +3 per +50
+
+    // Pulse depth (how hard the pulse hits) grows with points but saturates
+    const pulseDepth = Math.min(0.15 + points * 0.004, 0.7) // ~0.55 at 100, up to 0.7
+
+    // Pulse frequency: slightly slower as points rise (stronger, slower thumps)
+    const pulseFreq = Math.max(0.08, 0.25 - points * 0.0008) // ~0.17 at 100, ~0.09 at 200
+
+    // Base movement:
+    // Before 100 points keep it modest, then ramp harder after 100.
+    const baseAmp =
+      points <= 100
+        ? 6 * (points / 100) // up to ~6 by 100
+        : 6 + (points - 100) * 0.3 // +0.3 px per point after 100 (tune to taste)
+
+    // Wave complexity/frequencies nudge up with points
+    const f1 = 0.35 + 0.0015 * points
+    const f2 = 0.12 + 0.0010 * points
+
+    // Base time speed; a touch faster with more points
+    const baseSpeed = 0.01 + 0.00015 * points
 
     const animate = () => {
       t += baseSpeed
+
+      // Pulse envelope in [0..1]; raising to pulsePower gives short, strong bursts
       const pulsePhase = (Math.sin(t * Math.PI * 2 * pulseFreq) + 1) * 0.5
       const envelope = Math.pow(pulsePhase, pulsePower)
-      const amp = idleAmp + baseAmp * (1 + pulseDepth * envelope)
-      const t2 = t * (0.7 + (muted ? 0.3 : 0.6) * level)
+
+      // Effective amplitude: points-based + pulsed boost
+      const amp = baseAmp * (1 + pulseDepth * envelope)
+
+      const t2 = t * (0.7 + Math.min(points / 200, 0.6)) // small secondary phase speed-up
 
       const d = Array.from({ length: 80 }, (_, i) => {
         const x = (i / 79) * 1000
         const y =
           200 +
-          Math.sin(i * f1 + t)  * 18 * amp +
-          Math.cos(i * f2 + t2) *  6 * amp
+          Math.sin(i * f1 + t)  * 18 * amp +  // main wave
+          Math.cos(i * f2 + t2) *  6 * amp    // shimmer
         return `${i === 0 ? 'M' : 'L'} ${x.toFixed(2)} ${y.toFixed(2)}`
       }).join(' ')
 
