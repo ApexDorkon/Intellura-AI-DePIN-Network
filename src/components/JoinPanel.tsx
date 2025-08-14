@@ -1,6 +1,6 @@
 // src/components/JoinPanel.tsx
 import { useEffect, useMemo, useState } from 'react'
-import { BrowserProvider } from 'ethers' // ethers v6
+import { BrowserProvider } from 'ethers' // v6
 import { useAuth } from '../state/auth'
 import {
   getBalance,
@@ -13,17 +13,16 @@ import {
 import { API_BASE } from '../lib/config'
 
 declare global {
-  interface Window {
-    ethereum?: any
-  }
+  interface Window { ethereum?: any }
 }
 
 const shortAddr = (a: string) => (a?.length > 10 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a ?? '')
+const isLikelyRef = (s: string) => /^[A-Z0-9]{4,12}$/.test(s.trim())
 
 export default function JoinPanel() {
   const { me } = useAuth()
 
-  // Normalize handle/avatar regardless of backend shape
+  // Normalize name + avatar regardless of backend shape
   const username = useMemo(
     () => (me as any)?.handle ?? (me as any)?.x_username ?? 'User',
     [me],
@@ -32,12 +31,16 @@ export default function JoinPanel() {
     () => (me as any)?.avatarUrl ?? (me as any)?.profile_image_url ?? '',
     [me],
   )
+  const initialWallet = useMemo(
+    () => ((me as any)?.wallet_address ?? '').toString().toLowerCase(),
+    [me],
+  )
 
   const [balance, setBalance] = useState<number>(0)
   const [myRef, setMyRef] = useState<{ code: string; shareUrl: string } | null>(null)
 
-  // wallet + referral UI state
-  const [walletAddress, setWalletAddress] = useState<string>('') // filled after connect
+  // wallet/referrer UI state
+  const [walletAddress, setWalletAddress] = useState<string>('') // set from /me or after connect
   const [connecting, setConnecting] = useState(false)
 
   const [refCode, setRefCode] = useState('')
@@ -48,12 +51,18 @@ export default function JoinPanel() {
     code?: string
   } | null>(null)
 
+  // UX state
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [errorMsg, setErrorMsg] = useState<string | null>(null)
-  const [successMsg, setSuccessMsg] = useState<string | null>(null)
+  const [banner, setBanner] = useState<{ type: 'error' | 'success'; text: string } | null>(null)
+  const [fieldErr, setFieldErr] = useState<{ wallet?: string; ref?: string }>({})
 
-  // After auth: load points, my code, and referrer status
+  // Initialize wallet from /me as soon as it exists
+  useEffect(() => {
+    if (initialWallet && !walletAddress) setWalletAddress(initialWallet)
+  }, [initialWallet, walletAddress])
+
+  // After auth: load points, my code, and referrer state
   useEffect(() => {
     if (!me) return
     let mounted = true
@@ -76,46 +85,50 @@ export default function JoinPanel() {
         if (mounted) setLoading(false)
       }
     })()
-    return () => {
-      mounted = false
-    }
+    return () => { mounted = false }
   }, [me])
 
-  // Connect wallet with nonce+signature -> backend links it to current user
+  // Connect wallet with nonce+signature -> backend links it
   const handleConnectWallet = async () => {
-    setErrorMsg(null)
+    setFieldErr({})
+    setBanner(null)
     try {
       const eth = window.ethereum
       if (!eth) throw new Error('MetaMask not detected. Please install or enable it.')
-
       setConnecting(true)
 
-      // Request accounts and read signer/address
+      // Request accounts + signer
       await eth.request({ method: 'eth_requestAccounts' })
       const provider = new BrowserProvider(eth)
       const signer = await provider.getSigner()
       const addr = (await signer.getAddress()).toLowerCase()
 
-      // 1) get nonce from backend
+      // 1) nonce
       const { nonce } = await getWalletNonce(addr)
 
-      // 2) sign the nonce
+      // 2) sign
       const message = `Sign this nonce to authenticate: ${nonce}`
       const signature = await signer.signMessage(message)
 
-      // 3) link wallet on backend
+      // 3) link
       await connectWallet(addr, signature)
 
       setWalletAddress(addr)
-      setSuccessMsg('Wallet connected!')
-      setTimeout(() => setSuccessMsg(null), 2000)
+      setBanner({ type: 'success', text: 'Wallet connected.' })
     } catch (e: any) {
-      // Ignore user-reject quietly; otherwise show message
       const msg = typeof e?.message === 'string' ? e.message : 'Failed to connect wallet'
-      if (!/user rejected/i.test(msg)) setErrorMsg(msg)
+      if (!/user rejected/i.test(msg)) {
+        setFieldErr((p) => ({ ...p, wallet: msg }))
+        setBanner({ type: 'error', text: msg })
+      }
     } finally {
       setConnecting(false)
+      dismissBannerSoon()
     }
+  }
+
+  const dismissBannerSoon = () => {
+    setTimeout(() => setBanner(null), 3000)
   }
 
   /* =========================
@@ -126,11 +139,9 @@ export default function JoinPanel() {
       <section className="bg-[#0B0D12]">
         <div className="mx-auto max-w-6xl px-4 py-16">
           <div className="relative overflow-hidden rounded-3xl border border-white/10">
-            {/* Heavy veil */}
             <div className="absolute inset-0 backdrop-blur-3xl backdrop-saturate-50" />
             <div className="absolute inset-0 bg-black/60" />
             <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/10 via-transparent to-violet-500/15" />
-
             <div className="relative grid place-items-center px-6 py-16 sm:py-20">
               <div className="w-full max-w-3xl flex flex-col sm:flex-row items-center justify-between gap-6">
                 <div className="text-center sm:text-left">
@@ -161,6 +172,19 @@ export default function JoinPanel() {
     <section className="bg-[#0B0D12]">
       <div className="mx-auto max-w-6xl px-4 py-16">
         <div className="rounded-3xl border border-white/10 bg-white/5 p-6 sm:p-8 backdrop-blur">
+          {/* top banner */}
+          {banner && (
+            <div
+              className={`mb-4 rounded-xl border px-4 py-3 text-sm ${
+                banner.type === 'success'
+                  ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                  : 'border-rose-500/30 bg-rose-500/10 text-rose-300'
+              }`}
+            >
+              {banner.text}
+            </div>
+          )}
+
           <div className="grid gap-8 md:grid-cols-2">
             {/* Left — Profile + Setup */}
             <div>
@@ -198,35 +222,39 @@ export default function JoinPanel() {
               </p>
 
               <div className="mt-5 grid gap-4">
-                {/* Wallet connect row */}
-                <div className="flex flex-wrap items-center gap-3">
-                  {walletAddress ? (
-                    <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white/80">
-                      <span className="h-2 w-2 rounded-full bg-emerald-400" />
-                      {shortAddr(walletAddress)}
-                    </span>
-                  ) : (
-                    <button
-                      onClick={handleConnectWallet}
-                      disabled={connecting}
-                      className="rounded-full bg-white text-black px-4 py-2 text-sm font-semibold hover:bg-gray-200 disabled:opacity-60"
-                    >
-                      {connecting ? 'Connecting…' : '🦊 Connect wallet'}
-                    </button>
-                  )}
-
-                  {/* Let users change wallet */}
-                  {walletAddress && (
-                    <button
-                      onClick={handleConnectWallet}
-                      className="rounded-full border border-white/20 px-3 py-2 text-sm text-white/80 hover:bg-white/10"
-                    >
-                      Change
-                    </button>
+                {/* Wallet section */}
+                <div className="flex flex-col gap-2">
+                  <div className="flex flex-wrap items-center gap-3">
+                    {(walletAddress || initialWallet) ? (
+                      <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white/80">
+                        <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                        {shortAddr(walletAddress || initialWallet)}
+                      </span>
+                    ) : (
+                      <button
+                        onClick={handleConnectWallet}
+                        disabled={connecting}
+                        className="rounded-full bg-white text-black px-4 py-2 text-sm font-semibold hover:bg-gray-200 disabled:opacity-60"
+                      >
+                        {connecting ? 'Connecting…' : '🦊 Connect wallet'}
+                      </button>
+                    )}
+                    {/* Change wallet only if none from /me OR user just connected */}
+                    {walletAddress && (
+                      <button
+                        onClick={handleConnectWallet}
+                        className="rounded-full border border-white/20 px-3 py-2 text-sm text-white/80 hover:bg-white/10"
+                      >
+                        Change
+                      </button>
+                    )}
+                  </div>
+                  {fieldErr.wallet && (
+                    <div className="text-xs text-rose-400">{fieldErr.wallet}</div>
                   )}
                 </div>
 
-                {/* Only show referral input if user does NOT have a referrer yet */}
+                {/* Referral field — only if user has no referrer yet */}
                 {hasReferrer === false && (
                   <div>
                     <label className="mb-1 block text-sm text-white/70">
@@ -234,10 +262,16 @@ export default function JoinPanel() {
                     </label>
                     <input
                       value={refCode}
-                      onChange={(e) => setRefCode(e.target.value)}
-                      placeholder="friend123"
-                      className="w-full rounded-lg bg-black/40 text-white placeholder-white/30 border border-white/10 px-3 py-2 outline-none focus:ring-2 focus:ring-violet-500"
+                      onChange={(e) => {
+                        setRefCode(e.target.value.toUpperCase())
+                        if (fieldErr.ref) setFieldErr((p) => ({ ...p, ref: undefined }))
+                      }}
+                      placeholder="FUDCH8"
+                      className={`w-full rounded-lg bg-black/40 text-white placeholder-white/30 border px-3 py-2 outline-none focus:ring-2 ${
+                        fieldErr.ref ? 'border-rose-500 focus:ring-rose-500' : 'border-white/10 focus:ring-violet-500'
+                      }`}
                     />
+                    {fieldErr.ref && <div className="mt-1 text-xs text-rose-400">{fieldErr.ref}</div>}
                   </div>
                 )}
               </div>
@@ -245,47 +279,53 @@ export default function JoinPanel() {
               {/* Actions */}
               <div className="mt-6 flex items-center gap-3">
                 <button
-                  disabled={(!walletAddress && hasReferrer === false && !refCode.trim()) || saving}
+                  disabled={(hasReferrer !== false || !refCode.trim()) && !walletAddress}
                   onClick={async () => {
-                    setErrorMsg(null)
-                    setSuccessMsg(null)
+                    setFieldErr({})
+                    setBanner(null)
+
+                    // If we’re only submitting a referral:
+                    if (hasReferrer === false) {
+                      const code = refCode.trim().toUpperCase()
+                      if (code && !isLikelyRef(code)) {
+                        setFieldErr({ ref: 'Invalid code format.' })
+                        return
+                      }
+                    }
+
                     try {
                       setSaving(true)
-                      // Wallet is already saved in handleConnectWallet.
+
                       if (hasReferrer === false && refCode.trim()) {
-                        await applyReferralAPI(refCode.trim())
-                        // fetch referrer again to hide the input
+                        await applyReferralAPI(refCode.trim().toUpperCase())
                         const rr = await getMyReferrer().catch(() => ({ has_referrer: true } as any))
                         if (rr?.has_referrer) {
                           setHasReferrer(true)
                           setReferrer(rr.referrer ?? null)
                         }
+                        setBanner({ type: 'success', text: 'Referral applied.' })
+                        setRefCode('')
                       }
-                      // Refresh points & my referral code
+
+                      // Refresh points & my own referral code
                       const [b, r] = await Promise.all([
                         getBalance().catch(() => ({ balance: 0 })),
                         getMyReferral().catch(() => null as any),
                       ])
                       setBalance(b?.balance ?? 0)
                       if (r?.code) setMyRef(r)
-                      setSuccessMsg('Saved!')
                     } catch (e: any) {
-                      setErrorMsg(typeof e?.message === 'string' ? e.message : 'Failed to save')
+                      const msg = typeof e?.message === 'string' ? e.message : 'Failed to save'
+                      setBanner({ type: 'error', text: msg })
                     } finally {
                       setSaving(false)
-                      setTimeout(() => {
-                        setSuccessMsg(null)
-                        setErrorMsg(null)
-                      }, 2500)
+                      dismissBannerSoon()
                     }
                   }}
                   className="rounded-full bg-white text-black px-5 py-2 font-semibold hover:bg-gray-200 disabled:opacity-50"
                 >
                   {saving ? 'Saving…' : 'Save'}
                 </button>
-
-                {successMsg && <span className="text-sm text-emerald-400">{successMsg}</span>}
-                {errorMsg && <span className="text-sm text-rose-400">{errorMsg}</span>}
               </div>
             </div>
 
@@ -328,7 +368,6 @@ export default function JoinPanel() {
                 )}
               </div>
 
-              {/* Subtle hint card */}
               <div className="mt-6 rounded-xl border border-white/10 bg-gradient-to-br from-cyan-500/5 via-transparent to-violet-500/10 p-4">
                 <div className="text-sm text-white/80">
                   Tip: higher engagement unlocks bonus multipliers during AI signal drops.
