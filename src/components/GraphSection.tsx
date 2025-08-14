@@ -1,57 +1,43 @@
 // src/components/GraphSection.tsx
 import { useEffect, useRef } from 'react'
 
-type Props = { points?: number }
+type Props = { points?: number; muted?: boolean }
 
-export default function GraphSection({ points = 0 }: Props) {
+export default function GraphSection({ points = 0, muted = false }: Props) {
   const ref = useRef<SVGPathElement>(null)
 
   useEffect(() => {
     let t = 0
     let raf = 0
 
-    // Map points → level [0..1+] using a gentle curve (fast response at low points, taper later)
-    const level = Math.log1p(Math.max(0, points)) / Math.log(101) // ~0 at 0pts, ~1 at 100pts, >1 above
+    const rawLevel = Math.log1p(Math.max(0, points)) / Math.log(101)
+    const level = Math.min(rawLevel, 1)
 
-    // Base amplitude & frequency
-    // - idleAmp keeps a tiny motion when 0 points
-    // - baseAmp grows with points
-    const idleAmp = 3  // px – tiny “alive” motion when 0 points
-    const baseAmp = 20 * level // grows with points
+    // When muted (not authed or zero points), keep it *barely* alive:
+    const idleAmp  = muted ? 1 : 3
+    const baseAmp  = (muted ? 8 : 20) * level
+    const baseSpeed = muted ? 0.003 : 0.008 + 0.025 * level
 
-    // Pulse envelope:
-    // - when 0 points → slow & rare pulse, small boost
-    // - when more points → faster pulses & stronger boost
-    const pulseFreq = 0.15 + 0.6 * Math.min(level, 1)   // Hz-ish feel in our arbitrary time
-    const pulsePower = 6 - 4 * Math.min(level, 1)       // sharper pulse at low points
-    const pulseDepth = 0.15 + 0.55 * Math.min(level, 1) // how hard it hits
+    const pulseFreq  = muted ? 0.05 : 0.15 + 0.6 * level
+    const pulsePower = muted ? 7    : 6 - 4 * level
+    const pulseDepth = muted ? 0.10 : 0.15 + 0.55 * level
 
-    // “mostly still but sometimes pulse” for 0 points:
-    // - We keep the underlying t speed small when points are ~0
-    const baseSpeed = 0.008 + 0.025 * Math.min(level, 1)
+    const f1 = 0.35 + (muted ? 0.05 : 0.15) * level
+    const f2 = 0.12 + (muted ? 0.05 : 0.10) * level
 
     const animate = () => {
       t += baseSpeed
-
-      // Pulse envelope in [0..1], squashed to get short spikes
-      // Use (sin + 1)/2 then raise to a power for short bursts
       const pulsePhase = (Math.sin(t * Math.PI * 2 * pulseFreq) + 1) * 0.5
       const envelope = Math.pow(pulsePhase, pulsePower)
-
-      // Effective amplitude: idle motion + points-based + pulsed boost
       const amp = idleAmp + baseAmp * (1 + pulseDepth * envelope)
-
-      // Slightly increase complexity & speed with points
-      const f1 = 0.35 + 0.15 * Math.min(level, 1)
-      const f2 = 0.12 + 0.10 * Math.min(level, 1)
-      const t2 = t * (0.7 + 0.6 * Math.min(level, 1))
+      const t2 = t * (0.7 + (muted ? 0.3 : 0.6) * level)
 
       const d = Array.from({ length: 80 }, (_, i) => {
         const x = (i / 79) * 1000
         const y =
           200 +
-          Math.sin(i * f1 + t) * 18 * amp +   // main wave
-          Math.cos(i * f2 + t2) * 6 * amp     // secondary shimmer
+          Math.sin(i * f1 + t)  * 18 * amp +
+          Math.cos(i * f2 + t2) *  6 * amp
         return `${i === 0 ? 'M' : 'L'} ${x.toFixed(2)} ${y.toFixed(2)}`
       }).join(' ')
 
@@ -61,7 +47,7 @@ export default function GraphSection({ points = 0 }: Props) {
 
     raf = requestAnimationFrame(animate)
     return () => cancelAnimationFrame(raf)
-  }, [points])
+  }, [points, muted])
 
   return (
     <section className="bg-[#0E1117] border-y border-white/5">
