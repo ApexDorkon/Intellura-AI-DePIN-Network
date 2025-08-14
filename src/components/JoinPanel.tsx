@@ -33,7 +33,10 @@ export default function JoinPanel() {
   // Normalize name + avatar
   const username = useMemo(() => (me as any)?.handle ?? (me as any)?.x_username ?? 'User', [me])
   const avatar   = useMemo(() => (me as any)?.avatarUrl ?? (me as any)?.profile_image_url ?? '', [me])
-  const initialWallet = useMemo(() => ((me as any)?.wallet_address ?? '').toString().toLowerCase(), [me])
+  const initialWallet = useMemo(
+    () => ((me as any)?.wallet_address ?? '').toString().toLowerCase(),
+    [me],
+  )
 
   const [balance, setBalance] = useState<number>(0)
   const [myRef, setMyRef] = useState<{ code: string; shareUrl: string } | null>(null)
@@ -51,8 +54,12 @@ export default function JoinPanel() {
   const [fieldErr, setFieldErr] = useState<{ wallet?: string; ref?: string }>({})
   const [copied, setCopied] = useState(false)
 
-  useEffect(() => { if (initialWallet && !walletAddress) setWalletAddress(initialWallet) }, [initialWallet, walletAddress])
+  // hydrate wallet from /me
+  useEffect(() => {
+    if (initialWallet && !walletAddress) setWalletAddress(initialWallet)
+  }, [initialWallet, walletAddress])
 
+  // load points, my code, referrer
   useEffect(() => {
     if (!me) return
     let mounted = true
@@ -76,6 +83,7 @@ export default function JoinPanel() {
     return () => { mounted = false }
   }, [me])
 
+  // connect wallet (nonce + sign + link)
   const handleConnectWallet = async () => {
     setFieldErr({}); setBanner(null)
     try {
@@ -106,7 +114,7 @@ export default function JoinPanel() {
     }
   }
 
-  // Not authed
+  // -------------------- Not authed --------------------
   if (!me) {
     return (
       <section className="bg-[#0B0D12]">
@@ -121,7 +129,10 @@ export default function JoinPanel() {
                   <h3 className="text-3xl font-extrabold text-white">Join Intellura</h3>
                   <p className="mt-3 text-white/80">Connect your X account to unlock referrals and start earning points.</p>
                 </div>
-                <a href={`${API_BASE}/auth/x/login`} className="inline-flex items-center gap-2 rounded-full bg-white px-6 py-3 font-semibold text-black border border-white/20 hover:bg-gray-200 transition">
+                <a
+                  href={`${API_BASE}/auth/x/login`}
+                  className="inline-flex items-center gap-2 rounded-full bg-white px-6 py-3 font-semibold text-black border border-white/20 hover:bg-gray-200 transition"
+                >
                   <span>Connect X</span><span className="text-lg">𝕏</span>
                 </a>
               </div>
@@ -132,25 +143,30 @@ export default function JoinPanel() {
     )
   }
 
-  // Authed
+  // -------------------- Authed --------------------
   return (
     <section className="bg-[#0B0D12]">
       <div className="mx-auto max-w-6xl px-4 py-16">
-        <div className="rounded-3xl border border-white/10 bg-white/5 p-6 sm:p-8 backdrop-blur">
+        <div className="rounded-3xl border border-white/10 bg-white/5 p-6 sm:p-10 backdrop-blur">
           {banner && (
             <div className={`mb-4 rounded-xl border px-4 py-3 text-sm ${
-              banner.type === 'success' ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-                                        : 'border-rose-500/30 bg-rose-500/10 text-rose-300'
-            }`}>{banner.text}</div>
+              banner.type === 'success'
+                ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                : 'border-rose-500/30 bg-rose-500/10 text-rose-300'
+            }`}>
+              {banner.text}
+            </div>
           )}
 
-          <div className="grid items-stretch gap-8 md:grid-cols-2">
-            {/* Left — Profile + centered signal/wallet */}
-            <div>
+          <div className="grid items-stretch gap-10 md:grid-cols-2 min-h-[480px]">
+            {/* Left — Profile + perfectly centered signal/wallet */}
+            <div className="flex h-full flex-col">
+              {/* Profile header */}
               <div className="flex items-center gap-4">
                 <div className="h-12 w-12 overflow-hidden rounded-full ring-2 ring-white/10">
-                  {avatar ? <img src={avatar} alt={username} className="h-full w-full object-cover" />
-                          : <div className="h-full w-full bg-white/10" />}
+                  {avatar
+                    ? <img src={avatar} alt={username} className="h-full w-full object-cover" />
+                    : <div className="h-full w-full bg-white/10" />}
                 </div>
                 <div>
                   <div className="text-white font-semibold text-lg">@{username}</div>
@@ -166,15 +182,14 @@ export default function JoinPanel() {
                 </div>
               </div>
 
-              {/* Signal block, vertically centered between header and bottom */}
-          <div className="flex-1" />
-         <div className="max-w-md text-left">
-                <h3 className="text-xl font-semibold text-white">Tune in to the signal</h3>
-                <p className="mt-1 text-sm text-white/60">
+              {/* Centered “signal” block */}
+              <div className="my-auto max-w-md">
+                <h3 className="text-2xl font-semibold text-white">Tune in to the signal</h3>
+                <p className="mt-2 text-sm leading-relaxed text-white/70">
                   Link your on-chain wallet to start tracking rewards. Add an invite code to boost your starting signal.
                 </p>
 
-                <div className="mt-5 flex flex-col gap-2">
+                <div className="mt-6 flex flex-col gap-2">
                   {(walletAddress || initialWallet) ? (
                     <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white/80">
                       <span className="h-2 w-2 rounded-full bg-emerald-400" />
@@ -184,7 +199,7 @@ export default function JoinPanel() {
                     <button
                       onClick={handleConnectWallet}
                       disabled={connecting}
-                      className="rounded-full bg-white text-black px-4 py-2 text-sm font-semibold hover:bg-gray-200 disabled:opacity-60"
+                      className="rounded-full bg-white text-black px-5 py-3 text-sm font-semibold shadow hover:bg-gray-200 disabled:opacity-60"
                     >
                       {connecting ? 'Connecting…' : '🦊 Connect wallet'}
                     </button>
@@ -199,8 +214,7 @@ export default function JoinPanel() {
                   )}
                   {fieldErr.wallet && <div className="text-xs text-rose-400">{fieldErr.wallet}</div>}
                 </div>
-             </div>
-              <div className="flex-1" />
+              </div>
             </div>
 
             {/* Right — Status (top) + Referral + CTA + Link */}
@@ -239,7 +253,7 @@ export default function JoinPanel() {
               )}
 
               {/* CTA – Boost signal (above link) */}
-              <div className="mt-6">
+              <div className="mt-5">
                 <button
                   disabled={(hasReferrer !== false || !refCode.trim()) && !walletAddress}
                   onClick={async () => {
@@ -277,14 +291,14 @@ export default function JoinPanel() {
                       setTimeout(() => setBanner(null), 3000)
                     }
                   }}
-                  className="rounded-full bg-white text-black px-5 py-2 font-semibold hover:bg-gray-200 disabled:opacity-50"
+                  className="rounded-full bg-white text-black px-5 py-3 font-semibold shadow hover:bg-gray-200 disabled:opacity-50"
                 >
                   {saving ? 'Boosting…' : 'Boost signal'}
                 </button>
               </div>
 
               {/* Referral link */}
-              <div className="mt-6">
+              <div className="mt-5">
                 <label className="mb-1 block text-sm text-white/70">Your referral link</label>
                 {loading ? (
                   <div className="h-10 w-full animate-pulse rounded-lg bg-white/10" />
