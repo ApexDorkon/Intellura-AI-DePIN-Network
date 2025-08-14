@@ -12,26 +12,16 @@ import {
 } from '../lib/api'
 import { API_BASE } from '../lib/config'
 
-declare global {
-  interface Window { ethereum?: any }
-}
+declare global { interface Window { ethereum?: any } }
 
 const shortAddr = (a: string) => (a?.length > 10 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a ?? '')
 const isLikelyRef = (s: string) => /^[A-Z0-9]{4,12}$/.test(s.trim())
 
 function friendlyError(err: unknown): string {
-  // Our api.ts throws Error(message) where message might be a JSON string
   const raw = (err as any)?.message ?? err
   if (typeof raw === 'string') {
-    try {
-      const j = JSON.parse(raw)
-      if (j?.detail) return String(j.detail)
-    } catch {}
-    // common FastAPI shapes
-    if (raw.includes('"detail"')) {
-      const m = raw.match(/"detail"\s*:\s*"([^"]+)"/)
-      if (m?.[1]) return m[1]
-    }
+    try { const j = JSON.parse(raw); if (j?.detail) return String(j.detail) } catch {}
+    const m = raw.match(/"detail"\s*:\s*"([^"]+)"/); if (m?.[1]) return m[1]
     return raw
   }
   return 'Something went wrong.'
@@ -40,48 +30,29 @@ function friendlyError(err: unknown): string {
 export default function JoinPanel() {
   const { me } = useAuth()
 
-  // Normalize name + avatar regardless of backend shape
-  const username = useMemo(
-    () => (me as any)?.handle ?? (me as any)?.x_username ?? 'User',
-    [me],
-  )
-  const avatar = useMemo(
-    () => (me as any)?.avatarUrl ?? (me as any)?.profile_image_url ?? '',
-    [me],
-  )
-  const initialWallet = useMemo(
-    () => ((me as any)?.wallet_address ?? '').toString().toLowerCase(),
-    [me],
-  )
+  // Normalize name + avatar
+  const username = useMemo(() => (me as any)?.handle ?? (me as any)?.x_username ?? 'User', [me])
+  const avatar   = useMemo(() => (me as any)?.avatarUrl ?? (me as any)?.profile_image_url ?? '', [me])
+  const initialWallet = useMemo(() => ((me as any)?.wallet_address ?? '').toString().toLowerCase(), [me])
 
   const [balance, setBalance] = useState<number>(0)
   const [myRef, setMyRef] = useState<{ code: string; shareUrl: string } | null>(null)
 
-  // wallet/referrer UI state
-  const [walletAddress, setWalletAddress] = useState<string>('') // set from /me or after connect
+  const [walletAddress, setWalletAddress] = useState<string>('')
   const [connecting, setConnecting] = useState(false)
 
   const [refCode, setRefCode] = useState('')
   const [hasReferrer, setHasReferrer] = useState<boolean | null>(null)
-  const [referrer, setReferrer] = useState<{
-    x_username: string
-    profile_image_url?: string
-    code?: string
-  } | null>(null)
+  const [referrer, setReferrer] = useState<{ x_username: string; profile_image_url?: string; code?: string } | null>(null)
 
-  // UX state
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [banner, setBanner] = useState<{ type: 'error' | 'success'; text: string } | null>(null)
   const [fieldErr, setFieldErr] = useState<{ wallet?: string; ref?: string }>({})
   const [copied, setCopied] = useState(false)
 
-  // Initialize wallet from /me as soon as it exists
-  useEffect(() => {
-    if (initialWallet && !walletAddress) setWalletAddress(initialWallet)
-  }, [initialWallet, walletAddress])
+  useEffect(() => { if (initialWallet && !walletAddress) setWalletAddress(initialWallet) }, [initialWallet, walletAddress])
 
-  // After auth: load points, my code, and referrer state
   useEffect(() => {
     if (!me) return
     let mounted = true
@@ -100,36 +71,25 @@ export default function JoinPanel() {
           setHasReferrer(rr.has_referrer)
           setReferrer(rr.has_referrer ? rr.referrer ?? null : null)
         }
-      } finally {
-        if (mounted) setLoading(false)
-      }
+      } finally { if (mounted) setLoading(false) }
     })()
     return () => { mounted = false }
   }, [me])
 
-  // Connect wallet with nonce+signature -> backend links it
   const handleConnectWallet = async () => {
-    setFieldErr({})
-    setBanner(null)
+    setFieldErr({}); setBanner(null)
     try {
       const eth = window.ethereum
       if (!eth) throw new Error('MetaMask not detected. Please install or enable it.')
       setConnecting(true)
 
-      // Request accounts + signer
       await eth.request({ method: 'eth_requestAccounts' })
       const provider = new BrowserProvider(eth)
       const signer = await provider.getSigner()
       const addr = (await signer.getAddress()).toLowerCase()
 
-      // 1) nonce
       const { nonce } = await getWalletNonce(addr)
-
-      // 2) sign
-      const message = `Sign this nonce to authenticate: ${nonce}`
-      const signature = await signer.signMessage(message)
-
-      // 3) link
+      const signature = await signer.signMessage(`Sign this nonce to authenticate: ${nonce}`)
       await connectWallet(addr, signature)
 
       setWalletAddress(addr)
@@ -146,15 +106,12 @@ export default function JoinPanel() {
     }
   }
 
-  /* =========================
-     Not authenticated
-  ========================== */
+  // Not authed
   if (!me) {
     return (
       <section className="bg-[#0B0D12]">
         <div className="mx-auto max-w-6xl px-4 py-16">
           <div className="relative overflow-hidden rounded-3xl border border-white/10">
-            {/* Heavy veil */}
             <div className="absolute inset-0 backdrop-blur-3xl backdrop-saturate-50" />
             <div className="absolute inset-0 bg-black/60" />
             <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/10 via-transparent to-violet-500/15" />
@@ -162,16 +119,10 @@ export default function JoinPanel() {
               <div className="w-full max-w-3xl flex flex-col sm:flex-row items-center justify-between gap-6">
                 <div className="text-center sm:text-left">
                   <h3 className="text-3xl font-extrabold text-white">Join Intellura</h3>
-                  <p className="mt-3 text-white/80">
-                    Connect your X account to unlock referrals and start earning points.
-                  </p>
+                  <p className="mt-3 text-white/80">Connect your X account to unlock referrals and start earning points.</p>
                 </div>
-                <a
-                  href={`${API_BASE}/auth/x/login`}
-                  className="inline-flex items-center gap-2 rounded-full bg-white px-6 py-3 font-semibold text-black border border-white/20 hover:bg-gray-200 transition"
-                >
-                  <span>Connect X</span>
-                  <span className="text-lg">𝕏</span>
+                <a href={`${API_BASE}/auth/x/login`} className="inline-flex items-center gap-2 rounded-full bg-white px-6 py-3 font-semibold text-black border border-white/20 hover:bg-gray-200 transition">
+                  <span>Connect X</span><span className="text-lg">𝕏</span>
                 </a>
               </div>
             </div>
@@ -181,65 +132,48 @@ export default function JoinPanel() {
     )
   }
 
-  /* =========================
-     Authenticated
-  ========================== */
+  // Authed
   return (
     <section className="bg-[#0B0D12]">
       <div className="mx-auto max-w-6xl px-4 py-16">
         <div className="rounded-3xl border border-white/10 bg-white/5 p-6 sm:p-8 backdrop-blur">
-          {/* top banner */}
           {banner && (
-            <div
-              className={`mb-4 rounded-xl border px-4 py-3 text-sm ${
-                banner.type === 'success'
-                  ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-                  : 'border-rose-500/30 bg-rose-500/10 text-rose-300'
-              }`}
-            >
-              {banner.text}
-            </div>
+            <div className={`mb-4 rounded-xl border px-4 py-3 text-sm ${
+              banner.type === 'success' ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                                        : 'border-rose-500/30 bg-rose-500/10 text-rose-300'
+            }`}>{banner.text}</div>
           )}
 
           <div className="grid gap-8 md:grid-cols-2">
-            {/* Left — Profile + Wallet */}
+            {/* Left — Profile + centered signal/wallet */}
             <div>
-              {/* Profile header */}
               <div className="flex items-center gap-4">
                 <div className="h-12 w-12 overflow-hidden rounded-full ring-2 ring-white/10">
-                  {avatar ? (
-                    <img src={avatar} alt={username} className="h-full w-full object-cover" />
-                  ) : (
-                    <div className="h-full w-full bg-white/10" />
-                  )}
+                  {avatar ? <img src={avatar} alt={username} className="h-full w-full object-cover" />
+                          : <div className="h-full w-full bg-white/10" />}
                 </div>
                 <div>
                   <div className="text-white font-semibold text-lg">@{username}</div>
-                  {hasReferrer && referrer ? (
+                  {hasReferrer && referrer && (
                     <div className="mt-1 inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs text-white/80">
                       <span className="opacity-75">Invited by</span>
-                      {referrer.profile_image_url ? (
-                        <img
-                          src={referrer.profile_image_url}
-                          alt={referrer.x_username}
-                          className="h-4 w-4 rounded-full"
-                        />
-                      ) : null}
+                      {referrer.profile_image_url && (
+                        <img src={referrer.profile_image_url} alt={referrer.x_username} className="h-4 w-4 rounded-full" />
+                      )}
                       <span className="font-medium">@{referrer.x_username}</span>
                     </div>
-                  ) : null}
+                  )}
                 </div>
               </div>
 
-              {/* “Signals” phrasing */}
-              <h3 className="mt-6 text-xl font-semibold text-white">Tune in to the signal</h3>
-              <p className="mt-1 text-sm text-white/60">
-                Link your on-chain wallet to start tracking rewards. Add an invite code to boost your starting signal.
-              </p>
+              {/* Centered block */}
+              <div className="mt-6 max-w-md mx-auto text-center">
+                <h3 className="text-xl font-semibold text-white">Tune in to the signal</h3>
+                <p className="mt-1 text-sm text-white/60">
+                  Link your on-chain wallet to start tracking rewards. Add an invite code to boost your starting signal.
+                </p>
 
-              {/* Wallet section */}
-              <div className="mt-5 flex flex-col gap-2">
-                <div className="flex flex-wrap items-center gap-3">
+                <div className="mt-5 flex flex-col items-center gap-2">
                   {(walletAddress || initialWallet) ? (
                     <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white/80">
                       <span className="h-2 w-2 rounded-full bg-emerald-400" />
@@ -262,16 +196,28 @@ export default function JoinPanel() {
                       Change
                     </button>
                   )}
+                  {fieldErr.wallet && <div className="text-xs text-rose-400">{fieldErr.wallet}</div>}
                 </div>
-                {fieldErr.wallet && <div className="text-xs text-rose-400">{fieldErr.wallet}</div>}
               </div>
             </div>
 
-            {/* Right — Referral + Status */}
+            {/* Right — Status (top) + Referral + CTA + Link */}
             <div>
-              {/* Referral input FIRST */}
+              {/* Status FIRST */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-xl font-bold text-white">Your Intellura status</h4>
+                  <p className="text-white/70">Keep sharing and earning.</p>
+                </div>
+                <div className="rounded-xl bg-black/40 border border-white/10 px-4 py-3">
+                  <div className="text-xs text-white/60">Points</div>
+                  <div className="text-2xl font-extrabold text-white">{loading ? '—' : balance}</div>
+                </div>
+              </div>
+
+              {/* Referral code */}
               {hasReferrer === false && (
-                <div className="mb-6">
+                <div className="mt-6">
                   <label className="mb-1 block text-sm text-white/70">
                     Referral code <span className="text-white/40">(optional, +100 points)</span>
                   </label>
@@ -290,73 +236,22 @@ export default function JoinPanel() {
                 </div>
               )}
 
-              {/* Referral link */}
-              <div>
-                <label className="mb-1 block text-sm text-white/70">Your referral link</label>
-                {loading ? (
-                  <div className="h-10 w-full animate-pulse rounded-lg bg-white/10" />
-                ) : (
-                  <div className="flex items-stretch gap-2">
-                    <input
-                      readOnly
-                      value={myRef?.shareUrl ?? 'Generating…'}
-                      className="flex-1 rounded-lg bg-black/40 text-white border border-white/10 px-3 py-2"
-                    />
-                    <button
-                      disabled={!myRef?.shareUrl}
-                      onClick={() => {
-                        if (!myRef?.shareUrl) return
-                        navigator.clipboard.writeText(myRef.shareUrl)
-                        setCopied(true)
-                        setTimeout(() => setCopied(false), 1500)
-                      }}
-                      className={`rounded-lg px-4 font-semibold transition ${
-                        copied
-                          ? 'bg-emerald-500 text-black'
-                          : 'bg-white text-black hover:bg-gray-200 disabled:opacity-50'
-                      }`}
-                    >
-                      {copied ? 'Copied!' : 'Copy'}
-                    </button>
-                  </div>
-                )}
-                {!myRef?.code && !loading && (
-                  <p className="mt-2 text-xs text-white/50">No code yet? It will appear here once created.</p>
-                )}
-              </div>
-
-              {/* Points pill */}
-              <div className="mt-6 flex items-center justify-between">
-                <div>
-                  <h4 className="text-xl font-bold text-white">Your Intellura status</h4>
-                  <p className="text-white/70">Keep sharing and earning.</p>
-                </div>
-
-                <div className="rounded-xl bg-black/40 border border-white/10 px-4 py-3">
-                  <div className="text-xs text-white/60">Points</div>
-                  <div className="text-2xl font-extrabold text-white">{loading ? '—' : balance}</div>
-                </div>
-              </div>
-
-              {/* CTA */}
+              {/* CTA – Boost signal (above link) */}
               <div className="mt-6">
                 <button
                   disabled={(hasReferrer !== false || !refCode.trim()) && !walletAddress}
                   onClick={async () => {
-                    setFieldErr({})
-                    setBanner(null)
+                    setFieldErr({}); setBanner(null)
 
                     if (hasReferrer === false) {
                       const code = refCode.trim().toUpperCase()
                       if (code && !isLikelyRef(code)) {
-                        setFieldErr({ ref: 'Invalid code format.' })
-                        return
+                        setFieldErr({ ref: 'Invalid code format.' }); return
                       }
                     }
 
                     try {
                       setSaving(true)
-
                       if (hasReferrer === false && refCode.trim()) {
                         await applyReferralAPI(refCode.trim().toUpperCase())
                         const rr = await getMyReferrer().catch(() => ({ has_referrer: true } as any))
@@ -367,7 +262,6 @@ export default function JoinPanel() {
                         setBanner({ type: 'success', text: 'Referral applied.' })
                         setRefCode('')
                       }
-
                       const [b, r] = await Promise.all([
                         getBalance().catch(() => ({ balance: 0 })),
                         getMyReferral().catch(() => null as any),
@@ -383,8 +277,40 @@ export default function JoinPanel() {
                   }}
                   className="rounded-full bg-white text-black px-5 py-2 font-semibold hover:bg-gray-200 disabled:opacity-50"
                 >
-                  {saving ? 'Joining…' : 'Join signal'}
+                  {saving ? 'Boosting…' : 'Boost signal'}
                 </button>
+              </div>
+
+              {/* Referral link */}
+              <div className="mt-6">
+                <label className="mb-1 block text-sm text-white/70">Your referral link</label>
+                {loading ? (
+                  <div className="h-10 w-full animate-pulse rounded-lg bg-white/10" />
+                ) : (
+                  <div className="flex items-stretch gap-2">
+                    <input
+                      readOnly
+                      value={myRef?.shareUrl ?? 'Generating…'}
+                      className="flex-1 rounded-lg bg-black/40 text-white border border-white/10 px-3 py-2"
+                    />
+                    <button
+                      disabled={!myRef?.shareUrl}
+                      onClick={() => {
+                        if (!myRef?.shareUrl) return
+                        navigator.clipboard.writeText(myRef.shareUrl)
+                        setCopied(true); setTimeout(() => setCopied(false), 1500)
+                      }}
+                      className={`rounded-lg px-4 font-semibold transition ${
+                        copied ? 'bg-emerald-500 text-black' : 'bg-white text-black hover:bg-gray-200 disabled:opacity-50'
+                      }`}
+                    >
+                      {copied ? 'Copied!' : 'Copy'}
+                    </button>
+                  </div>
+                )}
+                {!myRef?.code && !loading && (
+                  <p className="mt-2 text-xs text-white/50">No code yet? It will appear here once created.</p>
+                )}
               </div>
 
               {/* Tip */}
