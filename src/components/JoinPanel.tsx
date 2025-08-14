@@ -31,13 +31,13 @@ function friendlyError(err: unknown): string {
 export default function JoinPanel() {
   const { me } = useAuth()
 
-  // Profile (straight from /me)
+  // ----- Profile from /me (single source of truth) -----
   const username = (me as any)?.handle ?? (me as any)?.x_username ?? 'User'
   const avatar   = (me as any)?.avatarUrl ?? (me as any)?.profile_image_url ?? ''
   const walletFromMe = String((me as any)?.wallet_address ?? '').toLowerCase()
   const hasWallet = isHexWallet(walletFromMe)
 
-  // UI/Other state
+  // ----- UI state -----
   const [connecting, setConnecting] = useState(false)
   const [balance, setBalance] = useState<number>(0)
   const [myRef, setMyRef] = useState<{ code: string; shareUrl: string } | null>(null)
@@ -50,7 +50,7 @@ export default function JoinPanel() {
   const [fieldErr, setFieldErr] = useState<{ wallet?: string; ref?: string }>({})
   const [copied, setCopied] = useState(false)
 
-  // Load points, my code, referrer after auth
+  // ----- After auth: load points, my code, and referrer state -----
   useEffect(() => {
     if (!me) return
     let mounted = true
@@ -69,14 +69,17 @@ export default function JoinPanel() {
           setHasReferrer(rr.has_referrer)
           setReferrer(rr.has_referrer ? rr.referrer ?? null : null)
         }
-      } finally { if (mounted) setLoading(false) }
+      } finally {
+        if (mounted) setLoading(false)
+      }
     })()
     return () => { mounted = false }
   }, [me])
 
-  // Connect wallet -> backend saves it; UI will reflect once /me updates
+  // ----- Connect wallet (backend persists; UI reads from /me) -----
   const handleConnectWallet = async () => {
-    setFieldErr({}); setBanner(null)
+    setFieldErr({})
+    setBanner(null)
     try {
       const eth = window.ethereum
       if (!eth) throw new Error('MetaMask not detected. Please install or enable it.')
@@ -92,9 +95,9 @@ export default function JoinPanel() {
       await connectWallet(addr, signature)
 
       setBanner({ type: 'success', text: 'Wallet connected.' })
-      // NOTE: Re-fetch /me in your auth store if you have a method,
-      // e.g., useAuth().refresh(), otherwise the next page visit/refresh
-      // will show the linked address automatically since we render from /me.
+
+      // If your auth store exposes a refresh, uncomment:
+      // ;(useAuth as any).getState?.().refresh?.()
     } catch (e: any) {
       const msg = friendlyError(e)
       if (!/user rejected/i.test(msg)) {
@@ -142,19 +145,27 @@ export default function JoinPanel() {
       <div className="mx-auto max-w-6xl px-4 py-12">
         <div className="rounded-3xl border border-white/10 bg-white/5 p-6 sm:p-8 backdrop-blur">
           {banner && (
-            <div className={`mb-4 rounded-xl border px-4 py-3 text-sm ${
-              banner.type === 'success'
-                ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-                : 'border-rose-500/30 bg-rose-500/10 text-rose-300'
-            }`}>{banner.text}</div>
+            <div
+              className={`mb-4 rounded-xl border px-4 py-3 text-sm ${
+                banner.type === 'success'
+                  ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                  : 'border-rose-500/30 bg-rose-500/10 text-rose-300'
+              }`}
+            >
+              {banner.text}
+            </div>
           )}
 
           <div className="grid gap-8 md:grid-cols-2">
-            {/* LEFT — profile + wallet strictly from /me */}
+            {/* LEFT — profile + wallet (strictly from /me) */}
             <div className="flex flex-col">
               <div className="mb-6 flex items-center gap-4">
                 <div className="h-12 w-12 overflow-hidden rounded-full ring-2 ring-white/10">
-                  {avatar ? <img src={avatar} alt={username} className="h-full w-full object-cover" /> : <div className="h-full w-full bg-white/10" />}
+                  {avatar ? (
+                    <img src={avatar} alt={username} className="h-full w-full object-cover" />
+                  ) : (
+                    <div className="h-full w-full bg-white/10" />
+                  )}
                 </div>
                 <div>
                   <div className="text-white font-semibold text-lg">@{username}</div>
@@ -162,7 +173,11 @@ export default function JoinPanel() {
                     <div className="mt-1 inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs text-white/80">
                       <span className="opacity-75">Invited by</span>
                       {referrer.profile_image_url && (
-                        <img src={referrer.profile_image_url} alt={referrer.x_username} className="h-4 w-4 rounded-full" />
+                        <img
+                          src={referrer.profile_image_url}
+                          alt={referrer.x_username}
+                          className="h-4 w-4 rounded-full"
+                        />
                       )}
                       <span className="font-medium">@{referrer.x_username}</span>
                     </div>
@@ -233,9 +248,13 @@ export default function JoinPanel() {
                     <button
                       disabled={!refCode.trim()}
                       onClick={async () => {
-                        setFieldErr({}); setBanner(null)
+                        setFieldErr({})
+                        setBanner(null)
                         const code = refCode.trim().toUpperCase()
-                        if (code && !isLikelyRef(code)) { setFieldErr({ ref: 'Invalid code format.' }); return }
+                        if (code && !isLikelyRef(code)) {
+                          setFieldErr({ ref: 'Invalid code format.' })
+                          return
+                        }
                         try {
                           setSaving(true)
                           await applyReferralAPI(code)
@@ -255,7 +274,8 @@ export default function JoinPanel() {
                         } catch (e: any) {
                           setBanner({ type: 'error', text: friendlyError(e) })
                         } finally {
-                          setSaving(false); setTimeout(() => setBanner(null), 3000)
+                          setSaving(false)
+                          setTimeout(() => setBanner(null), 3000)
                         }
                       }}
                       className="rounded-full bg-white text-black px-4 py-2 text-sm font-semibold hover:bg-gray-200 disabled:opacity-50"
@@ -266,7 +286,7 @@ export default function JoinPanel() {
                 </>
               )}
 
-              {/* Referral link */}
+              {/* Referral link (always visible) */}
               <div className="mt-5">
                 <label className="mb-1 block text-sm text-white/70">Your referral link</label>
                 {loading ? (
@@ -283,7 +303,8 @@ export default function JoinPanel() {
                       onClick={() => {
                         if (!myRef?.shareUrl) return
                         navigator.clipboard.writeText(myRef.shareUrl)
-                        setCopied(true); setTimeout(() => setCopied(false), 1500)
+                        setCopied(true)
+                        setTimeout(() => setCopied(false), 1500)
                       }}
                       className={`rounded-lg px-3 text-sm font-semibold transition ${
                         copied ? 'bg-emerald-500 text-black' : 'bg-white text-black hover:bg-gray-200 disabled:opacity-50'
@@ -295,6 +316,7 @@ export default function JoinPanel() {
                 )}
               </div>
 
+              {/* Tip */}
               <div className="mt-4 rounded-lg border border-white/10 bg-gradient-to-br from-cyan-500/5 via-transparent to-violet-500/10 p-3">
                 <div className="text-xs text-white/70">
                   Tip: higher engagement unlocks bonus multipliers during AI signal drops.
