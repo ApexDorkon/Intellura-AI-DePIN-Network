@@ -1,12 +1,12 @@
 // src/components/ConnectWallet.tsx
 import { useEffect, useState } from 'react'
-import { ethers } from 'ethers'
-import { setWallet as setWalletAPI } from '../lib/api'
+import { BrowserProvider, getAddress } from 'ethers'
+import { getWalletNonce, connectWallet } from '../lib/api'
 
 type Props = {
   onClose: () => void
   onConnected?: (address: string) => void
-  afterSave?: () => void | Promise<void> // e.g. refresh right column in JoinPanel
+  afterSave?: () => void | Promise<void>
 }
 
 declare global {
@@ -15,64 +15,60 @@ declare global {
   }
 }
 
-function short(addr: string) {
-  return addr ? `${addr.slice(0, 6)}…${addr.slice(-4)}` : ''
-}
+const short = (a: string) => (a ? `${a.slice(0, 6)}…${a.slice(-4)}` : '')
 
 export default function ConnectWallet({ onClose, onConnected, afterSave }: Props) {
-  const [address, setAddress] = useState<string>('')
+  const [address, setAddress] = useState('')
   const [chainId, setChainId] = useState<number | null>(null)
   const [connecting, setConnecting] = useState(false)
-  const [saving, setSaving] = useState(false)
+  const [signing, setSigning] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Attempt a soft read of currently selected account (if already connected)
+  // Soft-read current wallet + listen for changes
   useEffect(() => {
-    let unsub = () => {}
-    const init = async () => {
-      if (!window.ethereum) return
+    if (!window.ethereum) return
+    let off = () => {}
+    ;(async () => {
       try {
-        const provider = new ethers.BrowserProvider(window.ethereum)
-        const network = await provider.getNetwork().catch(() => null)
-        if (network) setChainId(Number(network.chainId))
+        const provider = new BrowserProvider(window.ethereum)
+        const net = await provider.getNetwork().catch(() => null)
+        if (net) setChainId(Number(net.chainId))
 
-        // if they already granted access
-        const accounts: string[] = await window.ethereum.request?.({ method: 'eth_accounts' })
-        if (accounts?.[0]) setAddress(ethers.getAddress(accounts[0]))
+        const accs: string[] = await window.ethereum.request?.({ method: 'eth_accounts' })
+        if (accs?.[0]) setAddress(getAddress(accs[0]))
 
-        // react to account/chain changes
-        const onAccountsChanged = (accs: string[]) => setAddress(accs?.[0] ? ethers.getAddress(accs[0]) : '')
-        const onChainChanged = (_hex: string) => window.location.reload()
+        const onAccountsChanged = (accs: string[]) =>
+          setAddress(accs?.[0] ? getAddress(accs[0]) : '')
+        const onChainChanged = () => window.location.reload()
 
         window.ethereum.on?.('accountsChanged', onAccountsChanged)
         window.ethereum.on?.('chainChanged', onChainChanged)
-        unsub = () => {
+        off = () => {
           window.ethereum.removeListener?.('accountsChanged', onAccountsChanged)
           window.ethereum.removeListener?.('chainChanged', onChainChanged)
         }
       } catch {}
-    }
-    init()
-    return () => unsub()
+    })()
+    return () => off()
   }, [])
 
   const connect = async () => {
     if (!window.ethereum) {
-      setError('No wallet detected. Please install MetaMask or a compatible wallet.')
+      setError('No wallet detected. Install MetaMask or a compatible wallet.')
       return
     }
     try {
       setConnecting(true)
       setError(null)
       await window.ethereum.request({ method: 'eth_requestAccounts' })
-      const provider = new ethers.BrowserProvider(window.ethereum)
+      const provider = new BrowserProvider(window.ethereum)
       const signer = await provider.getSigner()
       const addr = await signer.getAddress()
-      setAddress(ethers.getAddress(addr))
-      const network = await provider.getNetwork().catch(() => null)
-      if (network) setChainId(Number(network.chainId))
+      setAddress(getAddress(addr))
+      const net = await provider.getNetwork().catch(() => null)
+      if (net) setChainId(Number(net.chainId))
     } catch (e: any) {
-      // user rejected is fine, keep quiet
+      // user rejected = silent
       if (e?.code === 4001 || String(e?.message || '').toLowerCase().includes('user rejected')) return
       setError(e?.message || 'Failed to connect wallet.')
     } finally {
@@ -80,19 +76,31 @@ export default function ConnectWallet({ onClose, onConnected, afterSave }: Props
     }
   }
 
-  const saveWallet = async () => {
-    if (!address) return
+  const signAndLink = async () => {
+    if (!window.ethereum || !address) return
     try {
-      setSaving(true)
+      setSigning(true)
       setError(null)
-      await setWalletAPI(address) // cookie-auth; no headers needed
+
+      // 1) get nonce for this address
+      const { nonce } = await getWalletNonce(address)
+
+      // 2) sign message
+      const provider = new BrowserProvider(window.ethereum)
+      const signer = await provider.getSigner()
+      const message = `Sign this nonce to authenticate: ${nonce}`
+      const signature = await signer.signMessage(message)
+
+      // 3) send to backend
+      await connectWallet(address, signature)
+
       onConnected?.(address)
       await Promise.resolve(afterSave?.())
       onClose()
     } catch (e: any) {
-      setError(e?.message || 'Failed to save wallet.')
+      setError(e?.message || 'Failed to link wallet.')
     } finally {
-      setSaving(false)
+      setSigning(false)
     }
   }
 
@@ -110,8 +118,7 @@ export default function ConnectWallet({ onClose, onConnected, afterSave }: Props
               No browser wallet detected. Install{' '}
               <a className="underline hover:text-white" href="https://metamask.io" target="_blank" rel="noreferrer">
                 MetaMask
-              </a>{' '}
-              or a compatible wallet, then try again.
+              </a>{' '}and try again.
             </p>
           </div>
         ) : (
@@ -146,11 +153,11 @@ export default function ConnectWallet({ onClose, onConnected, afterSave }: Props
               </button>
 
               <button
-                onClick={saveWallet}
-                disabled={!address || saving}
+                onClick={signAndLink}
+                disabled={!address || signing}
                 className="inline-flex w-full items-center justify-center rounded-full border border-white/15 bg-white/10 px-5 py-2.5 font-semibold text-white transition hover:bg-white/15 disabled:opacity-60"
               >
-                {saving ? 'Saving…' : 'Save this wallet'}
+                {signing ? 'Linking…' : 'Sign & Link Wallet'}
               </button>
 
               <button

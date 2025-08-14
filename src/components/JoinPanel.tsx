@@ -1,3 +1,4 @@
+// src/components/JoinPanel.tsx
 import { useEffect, useMemo, useState } from 'react'
 import { BrowserProvider } from 'ethers' // ethers v6
 import { useAuth } from '../state/auth'
@@ -5,27 +6,38 @@ import {
   getBalance,
   getMyReferral,
   getMyReferrer,
-  setWallet as setWalletAPI,
+  getWalletNonce,
+  connectWallet,
   applyReferral as applyReferralAPI,
 } from '../lib/api'
 import { API_BASE } from '../lib/config'
 
-function shortAddr(a: string) {
-  return a.length > 10 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a
+declare global {
+  interface Window {
+    ethereum?: any
+  }
 }
+
+const shortAddr = (a: string) => (a?.length > 10 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a ?? '')
 
 export default function JoinPanel() {
   const { me } = useAuth()
 
   // Normalize handle/avatar regardless of backend shape
-  const username = useMemo(() => (me as any)?.handle ?? (me as any)?.x_username ?? 'User', [me])
-  const avatar   = useMemo(() => (me as any)?.avatarUrl ?? (me as any)?.profile_image_url ?? '', [me])
+  const username = useMemo(
+    () => (me as any)?.handle ?? (me as any)?.x_username ?? 'User',
+    [me],
+  )
+  const avatar = useMemo(
+    () => (me as any)?.avatarUrl ?? (me as any)?.profile_image_url ?? '',
+    [me],
+  )
 
   const [balance, setBalance] = useState<number>(0)
   const [myRef, setMyRef] = useState<{ code: string; shareUrl: string } | null>(null)
 
   // wallet + referral UI state
-  const [walletAddress, setWalletAddress] = useState<string>('')  // filled after connect
+  const [walletAddress, setWalletAddress] = useState<string>('') // filled after connect
   const [connecting, setConnecting] = useState(false)
 
   const [refCode, setRefCode] = useState('')
@@ -33,7 +45,7 @@ export default function JoinPanel() {
   const [referrer, setReferrer] = useState<{
     x_username: string
     profile_image_url?: string
-    code: string
+    code?: string
   } | null>(null)
 
   const [loading, setLoading] = useState(false)
@@ -41,7 +53,7 @@ export default function JoinPanel() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
 
-  // After auth: load balance, referral code, and referrer state
+  // After auth: load points, my code, and referrer status
   useEffect(() => {
     if (!me) return
     let mounted = true
@@ -69,32 +81,38 @@ export default function JoinPanel() {
     }
   }, [me])
 
-  // Connect wallet => save to backend => reflect in UI
+  // Connect wallet with nonce+signature -> backend links it to current user
   const handleConnectWallet = async () => {
     setErrorMsg(null)
     try {
-      if (!('ethereum' in window)) {
-        throw new Error('MetaMask not detected. Please install or enable it.')
-      }
+      const eth = window.ethereum
+      if (!eth) throw new Error('MetaMask not detected. Please install or enable it.')
+
       setConnecting(true)
 
-    const eth = (window as any).ethereum
-if (!eth) throw new Error('MetaMask not detected. Please install or enable it.')
+      // Request accounts and read signer/address
+      await eth.request({ method: 'eth_requestAccounts' })
+      const provider = new BrowserProvider(eth)
+      const signer = await provider.getSigner()
+      const addr = (await signer.getAddress()).toLowerCase()
 
-const provider = new BrowserProvider(eth)
-await eth.request({ method: 'eth_requestAccounts' })
-const signer = await provider.getSigner()
-const addr = (await signer.getAddress()).toLowerCase()
-      // Persist on server
-      await setWalletAPI(addr)
+      // 1) get nonce from backend
+      const { nonce } = await getWalletNonce(addr)
+
+      // 2) sign the nonce
+      const message = `Sign this nonce to authenticate: ${nonce}`
+      const signature = await signer.signMessage(message)
+
+      // 3) link wallet on backend
+      await connectWallet(addr, signature)
 
       setWalletAddress(addr)
       setSuccessMsg('Wallet connected!')
       setTimeout(() => setSuccessMsg(null), 2000)
     } catch (e: any) {
-      // Silently ignore user-reject scenarios; otherwise show message
+      // Ignore user-reject quietly; otherwise show message
       const msg = typeof e?.message === 'string' ? e.message : 'Failed to connect wallet'
-      if (!/User rejected/i.test(msg)) setErrorMsg(msg)
+      if (!/user rejected/i.test(msg)) setErrorMsg(msg)
     } finally {
       setConnecting(false)
     }
@@ -108,7 +126,7 @@ const addr = (await signer.getAddress()).toLowerCase()
       <section className="bg-[#0B0D12]">
         <div className="mx-auto max-w-6xl px-4 py-16">
           <div className="relative overflow-hidden rounded-3xl border border-white/10">
-            {/* Heavy veil: ensure nothing behind is readable */}
+            {/* Heavy veil */}
             <div className="absolute inset-0 backdrop-blur-3xl backdrop-saturate-50" />
             <div className="absolute inset-0 bg-black/60" />
             <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/10 via-transparent to-violet-500/15" />
@@ -233,10 +251,15 @@ const addr = (await signer.getAddress()).toLowerCase()
                     setSuccessMsg(null)
                     try {
                       setSaving(true)
-                      // Wallet already saved in handleConnectWallet; here we only apply referral if present
+                      // Wallet is already saved in handleConnectWallet.
                       if (hasReferrer === false && refCode.trim()) {
                         await applyReferralAPI(refCode.trim())
-                        setHasReferrer(true) // optimistic; server enforces uniqueness
+                        // fetch referrer again to hide the input
+                        const rr = await getMyReferrer().catch(() => ({ has_referrer: true } as any))
+                        if (rr?.has_referrer) {
+                          setHasReferrer(true)
+                          setReferrer(rr.referrer ?? null)
+                        }
                       }
                       // Refresh points & my referral code
                       const [b, r] = await Promise.all([
