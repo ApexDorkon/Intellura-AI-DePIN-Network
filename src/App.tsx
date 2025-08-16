@@ -6,9 +6,9 @@ import Header from './components/Header'
 import Hero from './components/Hero'
 import GraphSection from './components/GraphSection'
 import JoinPanel from './components/JoinPanel'
+import Quests from './components/Quests'
 import ReferralBounce from './routes/ReferralBounce'
 
-// add these two:
 import { useAuth } from './state/auth'
 import { getBalance } from './lib/api'
 
@@ -16,18 +16,15 @@ function HomePage() {
   const { me } = useAuth()
   const [points, setPoints] = useState<number>(0)
 
+  // fetch points whenever auth changes
   useEffect(() => {
     let alive = true
-
-    if (!me) {                 // not authenticated → flat line
-      setPoints(0)
-      return
-    }
+    if (!me) { setPoints(0); return }
 
     ;(async () => {
       try {
         const { balance } = await getBalance()
-        const n = Number(balance)                // <-- FORCE NUMBER
+        const n = Number(balance)
         if (alive) setPoints(Number.isFinite(n) ? n : 0)
       } catch {
         if (alive) setPoints(0)
@@ -41,9 +38,10 @@ function HomePage() {
     <>
       <Header />
       <Hero />
-      {/* pass the numeric points to the graph */}
       <GraphSection points={points} />
       <JoinPanel />
+      {/* When a quest is claimed, refresh the points shown in the graph */}
+      <Quests onAfterClaim={(newTotal) => setPoints(Number(newTotal) || 0)} />
       <footer className="border-t border-white/10 py-10 text-center text-white/40">
         © {new Date().getFullYear()} Intellura
       </footer>
