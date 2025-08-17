@@ -54,7 +54,7 @@ export default function Quests({ onAfterClaim }: Props) {
 
   // Per-quest start times and ticking clock
   const [questTimers, setQuestTimers] = useState<TimerMap>(() => loadTimers())
-  const [tick, setTick] = useState(0) // simple rerender driver
+  const [, setTick] = useState(0) // simple rerender driver
 
   useEffect(() => {
     if (!me) return
