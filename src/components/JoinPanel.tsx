@@ -125,7 +125,7 @@ export default function JoinPanel() {
                 </div>
                 <a
                   href={`${API_BASE}/auth/x/login`}
-                  className="inline-flex items-center gap-2 rounded-full bg-white px-6 py-3 font-semibold text-black border border-white/20 hover:bg-gray-200 transition"
+                  className="inline-flex items-center gap-2 rounded-full bg-white px-6 py-3 font-semibold text-black border border-white/20 hover:bg-gray-200 transition w-full sm:w-auto justify-center"
                 >
                   <span>Connect</span><span className="text-lg">𝕏</span>
                 </a>
@@ -154,18 +154,18 @@ export default function JoinPanel() {
           )}
 
           <div className="grid gap-8 md:grid-cols-2">
-            {/* LEFT — profile + wallet (strictly from /me) */}
-            <div className="flex flex-col">
-              <div className="mb-6 flex items-center gap-4">
-                <div className="h-12 w-12 overflow-hidden rounded-full ring-2 ring-white/10">
+            {/* LEFT — profile + wallet */}
+            <div className="flex flex-col min-w-0">
+              <div className="mb-6 flex items-center gap-4 flex-wrap">
+                <div className="h-12 w-12 overflow-hidden rounded-full ring-2 ring-white/10 shrink-0">
                   {avatar ? (
                     <img src={avatar} alt={username} className="h-full w-full object-cover" />
                   ) : (
                     <div className="h-full w-full bg-white/10" />
                   )}
                 </div>
-                <div>
-                  <div className="text-white font-semibold text-lg">@{username}</div>
+                <div className="min-w-0">
+                  <div className="text-white font-semibold text-lg truncate">@{username}</div>
                   {hasReferrer && referrer && (
                     <div className="mt-1 inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs text-white/80">
                       <span className="opacity-75">Invited by</span>
@@ -178,7 +178,6 @@ export default function JoinPanel() {
                 </div>
               </div>
 
-              {/* COPY CHANGES HERE */}
               {hasWallet ? (
                 <>
                   <h3 className="text-lg font-semibold text-white" aria-live="polite">Signal Working</h3>
@@ -193,20 +192,19 @@ export default function JoinPanel() {
                 </>
               )}
 
-              <div className="mt-4 flex flex-col gap-2 max-w-xs">
+              <div className="mt-4 flex flex-col gap-2 w-full sm:max-w-xs">
                 {hasWallet ? (
                   <span
-                    className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white/80"
-                    style={{ minWidth: `${walletFromMe.length + 2}ch` }}  // little bigger than the address
+                    className="inline-flex w-full sm:w-auto max-w-full min-w-0 items-center gap-2 rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white/80"
                   >
-                    <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse-slow" />
-                    {shortAddr(walletFromMe)}
+                    <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse-slow shrink-0" />
+                    <span className="truncate">{shortAddr(walletFromMe)}</span>
                   </span>
                 ) : (
                   <button
                     onClick={handleConnectWallet}
                     disabled={connecting}
-                    className="rounded-full bg-white text-black px-4 py-2 text-sm font-semibold hover:bg-gray-200 disabled:opacity-60"
+                    className="w-full sm:w-auto rounded-full bg-white text-black px-4 py-2 text-sm font-semibold hover:bg-gray-200 disabled:opacity-60"
                   >
                     {connecting ? 'Connecting…' : '🦊 Connect wallet'}
                   </button>
@@ -216,13 +214,13 @@ export default function JoinPanel() {
             </div>
 
             {/* RIGHT — status + referrals */}
-            <div>
-              <div className="flex items-center justify-between">
-                <div>
+            <div className="min-w-0">
+              <div className="flex items-start justify-between gap-3 flex-wrap">
+                <div className="min-w-0">
                   <h4 className="text-lg font-bold text-white">Your Intellura status</h4>
                   <p className="text-white/70 text-sm">Keep sharing and earning.</p>
                 </div>
-                <div className="rounded-lg bg-black/40 border border-white/10 px-3 py-2 text-center">
+                <div className="rounded-lg bg-black/40 border border-white/10 px-3 py-2 text-center shrink-0 self-start">
                   <div className="text-xs text-white/60">Points</div>
                   <div className="text-xl font-extrabold text-white">{loading ? '—' : balance}</div>
                 </div>
@@ -282,7 +280,7 @@ export default function JoinPanel() {
                           setTimeout(() => setBanner(null), 3000)
                         }
                       }}
-                      className="rounded-full bg-white text-black px-4 py-2 text-sm font-semibold hover:bg-gray-200 disabled:opacity-50"
+                      className="w-full sm:w-auto rounded-full bg-white text-black px-4 py-2 text-sm font-semibold hover:bg-gray-200 disabled:opacity-50"
                     >
                       {saving ? 'Boosting…' : 'Boost signal'}
                     </button>
@@ -295,11 +293,11 @@ export default function JoinPanel() {
                 {loading ? (
                   <div className="h-10 w-full animate-pulse rounded-lg bg-white/10" />
                 ) : (
-                  <div className="flex items-stretch gap-2">
+                  <div className="flex flex-col sm:flex-row items-stretch gap-2">
                     <input
                       readOnly
                       value={myRef?.shareUrl ?? 'Generating…'}
-                      className="flex-1 rounded-lg bg-black/40 text-white border border-white/10 px-3 py-2"
+                      className="flex-1 rounded-lg bg-black/40 text-white border border-white/10 px-3 py-2 min-w-0"
                     />
                     <button
                       disabled={!myRef?.shareUrl}
@@ -309,7 +307,7 @@ export default function JoinPanel() {
                         setCopied(true)
                         setTimeout(() => setCopied(false), 1500)
                       }}
-                      className={`rounded-lg px-3 text-sm font-semibold transition ${
+                      className={`rounded-lg px-3 py-2 text-sm font-semibold transition w-full sm:w-auto ${
                         copied ? 'bg-emerald-500 text-black' : 'bg-white text-black hover:bg-gray-200 disabled:opacity-50'
                       }`}
                     >
