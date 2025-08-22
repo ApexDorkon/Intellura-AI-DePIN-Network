@@ -38,10 +38,6 @@ Actionable quests (e.g., “Follow on X”) with **Open / Completed** states and
   <img src="src/assets/PointMissions.png" alt="Point Missions" width="900"/>
 </p>
 
-> If your filenames differ, update the paths above. From your note:  
-> - `IntelluraFirst.png`  
-> - `SignalBroadcast.png`  
-> - `PointMissions.png`  
 
 ---
 
