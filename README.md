@@ -1,50 +1,63 @@
-# React + TypeScript + Vite
+# Intellura — AI DePIN Network (Stage 1: Signal Campaign)
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Intellura is an **AI-powered DePIN network** where users and nodes generate, validate, and learn from live **signals** (social + market + on-chain).  
+This repository contains the **first product stage – Signal Campaign**: a public web app that attracts users to the network with quests, referrals, and daily engagement.
 
-Currently, two official plugins are available:
+---
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react/README.md) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## 🔭 What’s in this repo (Stage 1)
 
-## Expanding the ESLint configuration
+- **Signal Campaign UI** for onboarding and growth
+- **Quests & Points** (follow, share, complete actions)
+- **Referrals & Daily Boosts**
+- **Signals in Motion** (live network signal animation)
+- **Wallet connect** (for on-chain identity & rewards)
 
-If you are developing a production application, we recommend updating the configuration to enable type aware lint rules:
+> Later stages (prediction markets, node integrations, AI model feedback loops) live in private/internal repos.
 
-- Configure the top-level `parserOptions` property like this:
+---
 
-```js
-export default tseslint.config({
-  languageOptions: {
-    // other options...
-    parserOptions: {
-      project: ['./tsconfig.node.json', './tsconfig.app.json'],
-      tsconfigRootDir: import.meta.dirname,
-    },
-  },
-})
-```
+## 🖼 Product Screens (this build)
 
-- Replace `tseslint.configs.recommended` to `tseslint.configs.recommendedTypeChecked` or `tseslint.configs.strictTypeChecked`
-- Optionally add `...tseslint.configs.stylisticTypeChecked`
-- Install [eslint-plugin-react](https://github.com/jsx-eslint/eslint-plugin-react) and update the config:
+### 1) Landing — “Intellura First”
+A simple first-touch experience that introduces **Signals in Motion** and invites users to connect.
+<p align="center">
+  <img src="src/assets/IntelluraFirst.png" alt="Intellura First" width="900"/>
+</p>
 
-```js
-// eslint.config.js
-import react from 'eslint-plugin-react'
+### 2) Signal Broadcast
+Users see their **referral link**, optional **invite code**, **current points**, and the animated **signal line**.  
+Encourages sharing/broadcasting to grow the network.
+<p align="center">
+  <img src="src/assets/SignalBroadcast.png" alt="Signal Broadcast" width="900"/>
+</p>
 
-export default tseslint.config({
-  // Set the react version
-  settings: { react: { version: '18.3' } },
-  plugins: {
-    // Add the react plugin
-    react,
-  },
-  rules: {
-    // other rules...
-    // Enable its recommended rules
-    ...react.configs.recommended.rules,
-    ...react.configs['jsx-runtime'].rules,
-  },
-})
-```
+### 3) Missions (Quests)
+Actionable quests (e.g., “Follow on X”) with **Open / Completed** states and a **Daily Signal Boost** claim.
+<p align="center">
+  <img src="src/assets/PointMissions.png" alt="Point Missions" width="900"/>
+</p>
+
+> If your filenames differ, update the paths above. From your note:  
+> - `IntelluraFirst.png`  
+> - `SignalBroadcast.png`  
+> - `PointMissions.png`  
+
+---
+
+## 🧠 Why Intellura (high-level)
+
+- **AI + Crowd Intelligence**: Aggregate user predictions & social signals to improve market forecasts.  
+- **DePIN Utilization**: Turn unused bandwidth/compute into useful inference/training work tied to incentives.  
+- **Better Accuracy**: Blend human sentiment + network data to reduce forecast error over time.
+
+---
+
+## ⚙️ Tech Stack
+
+- **Frontend:** React + Type Script + Vite, TailwindCSS
+- **Backend:** FastAPI (Python) 
+- **Database:** PostgreSQL
+- **Realtime / Auth:** (varies by deployment)
+- **AI Layer:** LLM-powered insights & signal aggregation (internal services)
+
