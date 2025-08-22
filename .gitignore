@@ -22,3 +22,11 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+# Local envs
+.env.local
+.env
+*.env
+
+# Private configs
+lib/api.ts
+lib/config.ts
